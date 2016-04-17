@@ -4,8 +4,9 @@ version = "0.1.0"
 authors = ["William R. Fraser <wfraser@codewise.org>"]
 
 [dependencies]
-daemonize = '0.2'
-fuse = '0.2'
-libc = '0.2'
-log = '0.3'
-syslog = '3.1'
+daemonize = "0.2"
+fuse = "0.2"
+libc = "0.2"
+log = "0.3"
+syslog = "3.1"
+time = "0.1"
