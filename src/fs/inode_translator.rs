@@ -1,3 +1,8 @@
+// InodeTranslator :: A wrapper around FUSE that presents paths instead of inodes.
+//
+// Copyright (c) 2016 by William R. Fraser
+//
+
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
 

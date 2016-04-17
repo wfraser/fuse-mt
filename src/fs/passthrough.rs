@@ -1,3 +1,10 @@
+// Passthrough :: A filesystem that passes all calls through to another underlying filesystem.
+//
+// Implemented using the PathFilesystem wrapper over the FUSE Filesystem trait.
+//
+// Copyright (c) 2016 by William R. Fraser
+//
+
 use std::ffi::{CStr, OsStr, OsString};
 use std::io;
 use std::os::unix::ffi::{OsStrExt, OsStringExt};

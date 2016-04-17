@@ -1,3 +1,8 @@
+// Main Entry Point :: FUSE-MT test program.
+//
+// Copyright (c) 2016 by William R. Fraser
+//
+
 use std::env;
 use std::ffi::{OsStr, OsString};
 
