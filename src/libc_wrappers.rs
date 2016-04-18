@@ -10,7 +10,7 @@ use std::ptr;
 use std::os::unix::ffi::OsStringExt;
 use libc;
 
-pub fn opendir(path: OsString) -> Result<usize, libc::c_int> {
+pub fn opendir(path: OsString) -> Result<u64, libc::c_int> {
     let path_c = match CString::new(path.into_vec()) {
         Ok(s) => s,
         Err(e) => {
@@ -25,10 +25,10 @@ pub fn opendir(path: OsString) -> Result<usize, libc::c_int> {
         return Err(io::Error::last_os_error().raw_os_error().unwrap());
     }
 
-    Ok(dir as usize)
+    Ok(dir as u64)
 }
 
-pub fn readdir(fh: usize) -> Result<Option<libc::dirent>, libc::c_int> {
+pub fn readdir(fh: u64) -> Result<Option<libc::dirent>, libc::c_int> {
     let dir: *mut libc::DIR = unsafe { mem::transmute(fh) };
     let mut entry: libc::dirent = unsafe { mem::zeroed() };
     let mut result: *mut libc::dirent = ptr::null_mut();
@@ -45,7 +45,7 @@ pub fn readdir(fh: usize) -> Result<Option<libc::dirent>, libc::c_int> {
     Ok(Some(entry))
 }
 
-pub fn closedir(fh: usize) -> Result<(), libc::c_int> {
+pub fn closedir(fh: u64) -> Result<(), libc::c_int> {
     let dir: *mut libc::DIR = unsafe { mem::transmute(fh) };
     if -1 == unsafe { libc::closedir(dir) } {
         Err(io::Error::last_os_error().raw_os_error().unwrap())
@@ -54,7 +54,7 @@ pub fn closedir(fh: usize) -> Result<(), libc::c_int> {
     }
 }
 
-pub fn open(path: OsString, flags: libc::c_int) -> Result<usize, libc::c_int> {
+pub fn open(path: OsString, flags: libc::c_int) -> Result<u64, libc::c_int> {
     let path_c = match CString::new(path.into_vec()) {
         Ok(s) => s,
         Err(e) => {
@@ -69,10 +69,10 @@ pub fn open(path: OsString, flags: libc::c_int) -> Result<usize, libc::c_int> {
         return Err(io::Error::last_os_error().raw_os_error().unwrap());
     }
 
-    Ok(fd as usize)
+    Ok(fd as u64)
 }
 
-pub fn close(fh: usize) -> Result<(), libc::c_int> {
+pub fn close(fh: u64) -> Result<(), libc::c_int> {
     let fd = fh as libc::c_int;
     if -1 == unsafe { libc::close(fd) } {
         Err(io::Error::last_os_error().raw_os_error().unwrap())
@@ -93,6 +93,15 @@ pub fn lstat(path: OsString) -> Result<libc::stat64, libc::c_int> {
 
     let mut buf: libc::stat64 = unsafe { mem::zeroed() };
     if -1 == unsafe { libc::lstat64(mem::transmute(path_c.as_ptr()), &mut buf) } {
+        return Err(io::Error::last_os_error().raw_os_error().unwrap());
+    }
+
+    Ok(buf)
+}
+
+pub fn fstat(fd: u64) -> Result<libc::stat64, libc::c_int> {
+    let mut buf: libc::stat64 = unsafe { mem::zeroed() };
+    if -1 == unsafe { libc::fstat64(fd as libc::c_int, &mut buf) } {
         return Err(io::Error::last_os_error().raw_os_error().unwrap());
     }
 

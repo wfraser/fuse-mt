@@ -5,7 +5,7 @@
 // Copyright (c) 2016 by William R. Fraser
 //
 
-use std::ffi::{CStr, OsStr, OsString};
+use std::ffi::{CStr, CString, OsStr, OsString};
 use std::fs::File;
 use std::io::{self, Read, Write, Seek, SeekFrom};
 use std::os::unix::ffi::{OsStrExt, OsStringExt};
@@ -16,8 +16,58 @@ use super::inode_translator::*;
 use super::super::libc_wrappers;
 
 use fuse::*;
-use libc;
 use time::*;
+
+mod libc {
+    pub use ::libc::*;
+
+    // stuff missing from the libc crate.
+    extern "system" {
+        // Specified by POSIX.1-2008; not sure why this is missing.
+        pub fn fchown(fd: c_int, uid: uid_t, gid: gid_t) -> c_int;
+
+        // On Mac OS X, off_t is always 64 bits.
+        // https://developer.apple.com/library/mac/documentation/Darwin/Conceptual/64bitPorting/transition/transition.html
+        #[cfg(target_os = "macos")]
+        pub fn truncate(path: *const c_char, size: off_t) -> c_int;
+
+        // On Linux, off_t is architecture-dependent, and this is provided for 32-bit systems:
+        #[cfg(target_os = "linux")]
+        pub fn truncate64(path: *const c_char, size: off64_t) -> c_int;
+    }
+
+    #[cfg(target_os = "macos")]
+    pub fn truncate64(path: *const c_char, size: off_t) -> c_int {
+        truncate(path, size)
+    }
+
+    fn reduce(timespec: &timespec) -> timeval {
+        timeval {
+            tv_sec: timespec.tv_sec,
+            tv_usec: timespec.tv_nsec * 1000,
+        }
+    }
+
+    // Mac OS X does not support futimens; map it to futimes with lower precision.
+    #[cfg(target_os = "macos")]
+    pub fn futimens(fd: c_int, times: *const timespec) -> c_int {
+        unsafe {
+            let times_osx = [reduce(&*times), reduce(&*times.offset(1))];
+            futimes(fd, &times_osx as *const timeval)
+        }
+    }
+
+    // Mac OS X does not support utimensat; map it to utimes with lower precision.
+    // The relative path feature of utimensat is not supported by this workaround.
+    #[cfg(target_os = "macos")]
+    pub fn utimensat(_dirfd_ignored: c_int, path: *const c_char, times: *const timespec) -> c_int {
+        unsafe {
+            assert_eq!(*path, b'/' as c_char); // relative paths are not supported here!
+            let times_osx = [reduce(&*times), reduce(&*times.offset(1))];
+            utimes(path, &times_osx as *const timeval)
+        }
+    }
+}
 
 pub struct Passthrough {
     pub target: OsString,
@@ -39,6 +89,29 @@ fn mode_to_filetype(mode: libc::mode_t) -> FileType {
     }
 }
 
+fn stat_to_fuse(stat: libc::stat64) -> FileAttr {
+    let kind = mode_to_filetype(stat.st_mode);
+
+    let mode = stat.st_mode & 0o7777; // st_mode encodes the type AND the mode.
+
+    FileAttr {
+        ino: 0,
+        size: stat.st_size as u64,
+        blocks: stat.st_blocks as u64,
+        atime: Timespec { sec: stat.st_atime as i64, nsec: stat.st_atime_nsec as i32 },
+        mtime: Timespec { sec: stat.st_mtime as i64, nsec: stat.st_mtime_nsec as i32 },
+        ctime: Timespec { sec: stat.st_ctime as i64, nsec: stat.st_ctime_nsec as i32 },
+        crtime: Timespec { sec: 0, nsec: 0 },
+        kind: kind,
+        perm: mode as u16,
+        nlink: stat.st_nlink as u32,
+        uid: stat.st_uid,
+        gid: stat.st_gid,
+        rdev: stat.st_rdev as u32,
+        flags: 0,
+    }
+}
+
 impl Passthrough {
     fn real_path(&self, partial: &Path) -> OsString {
         PathBuf::from(&self.target)
@@ -52,26 +125,7 @@ impl Passthrough {
 
         match libc_wrappers::lstat(real) {
             Ok(stat) => {
-                let kind = mode_to_filetype(stat.st_mode);
-
-                let mode = stat.st_mode & 0o7777; // st_mode encodes the type AND the mode.
-
-                Ok(FileAttr {
-                    ino: 0,
-                    size: stat.st_size as u64,
-                    blocks: stat.st_blocks as u64,
-                    atime: Timespec { sec: stat.st_atime as i64, nsec: stat.st_atime_nsec as i32 },
-                    mtime: Timespec { sec: stat.st_mtime as i64, nsec: stat.st_mtime_nsec as i32 },
-                    ctime: Timespec { sec: stat.st_ctime as i64, nsec: stat.st_ctime_nsec as i32 },
-                    crtime: Timespec { sec: 0, nsec: 0 },
-                    kind: kind,
-                    perm: mode as u16,
-                    nlink: stat.st_nlink as u32,
-                    uid: stat.st_uid,
-                    gid: stat.st_gid,
-                    rdev: stat.st_rdev as u32,
-                    flags: 0,
-                })
+                Ok(stat_to_fuse(stat))
             },
             Err(e) => {
                 let err = io::Error::from_raw_os_error(e);
@@ -94,12 +148,19 @@ impl PathFilesystem for Passthrough {
         debug!("destroy");
     }
 
-    fn getattr(&mut self, _req: &Request, path: &Path) -> ResultGetattr {
+    fn getattr(&mut self, _req: &Request, path: &Path, fh: Option<u64>) -> ResultGetattr {
         debug!("getattr: {:?}", path);
 
-        match self.stat_real(path) {
-            Ok(attr) => Ok((TTL, attr)),
-            Err(e) => Err(e.raw_os_error().unwrap())
+        if let Some(fh) = fh {
+            match libc_wrappers::fstat(fh) {
+                Ok(stat) => Ok((TTL, stat_to_fuse(stat))),
+                Err(e) => Err(e)
+            }
+        } else {
+            match self.stat_real(path) {
+                Ok(attr) => Ok((TTL, attr)),
+                Err(e) => Err(e.raw_os_error().unwrap())
+            }
         }
     }
 
@@ -117,14 +178,14 @@ impl PathFilesystem for Passthrough {
         let real = self.real_path(path);
         debug!("opendir: {:?}", real);
         match libc_wrappers::opendir(real) {
-            Ok(fh) => Ok((fh as u64, 0)),
+            Ok(fh) => Ok((fh, 0)),
             Err(e) => Err(e)
         }
     }
 
     fn releasedir(&mut self, _req: &Request, path: &Path, fh: u64, _flags: u32) -> ResultEmpty {
         debug!("releasedir: {:?}", path);
-        libc_wrappers::closedir(fh as usize)
+        libc_wrappers::closedir(fh)
     }
 
     fn readdir(&mut self, _req: &Request, path: &Path, fh: u64, offset: u64) -> ResultReaddir {
@@ -142,7 +203,7 @@ impl PathFilesystem for Passthrough {
         }
 
         loop {
-            match libc_wrappers::readdir(fh as usize) {
+            match libc_wrappers::readdir(fh) {
                 Ok(Some(entry)) => {
                     let name_c = unsafe { CStr::from_ptr(entry.d_name.as_ptr()) };
                     let name_path = PathBuf::from(OsStr::from_bytes(name_c.to_bytes()));
@@ -193,7 +254,7 @@ impl PathFilesystem for Passthrough {
 
         let real = self.real_path(path);
         match libc_wrappers::open(real, flags as libc::c_int) {
-            Ok(fh) => Ok((fh as u64, flags)),
+            Ok(fh) => Ok((fh, flags)),
             Err(e) => {
                 error!("open({:?}): {}", path, io::Error::from_raw_os_error(e));
                 Err(e)
@@ -203,7 +264,7 @@ impl PathFilesystem for Passthrough {
 
     fn release(&mut self, _req: &Request, path: &Path, fh: u64, _flags: u32, _lock_owner: u64, _flush: bool) -> ResultEmpty {
         debug!("release: {:?}", path);
-        libc_wrappers::close(fh as usize)
+        libc_wrappers::close(fh)
     }
 
     fn read(&mut self, _req: &Request, path: &Path, fh: u64, offset: u64, size: u32) -> ResultData {
@@ -273,6 +334,115 @@ impl PathFilesystem for Passthrough {
         }
 
         Ok(())
+    }
+
+    fn chmod(&mut self, _req: &Request, path: &Path, fh: Option<u64>, mode: u32) -> ResultEmpty {
+        debug!("chown: {:?} to {:#o}", path, mode);
+
+        let result = if let Some(fh) = fh {
+            unsafe { libc::fchmod(fh as libc::c_int, mode as libc::mode_t) }
+        } else {
+            let real = self.real_path(path);
+            unsafe {
+                //let path_c = CString::from_vec_unchecked( Vec::from(path.as_os_str().as_bytes()) );
+                let path_c = CString::from_vec_unchecked(real.into_vec());
+                libc::chmod(path_c.as_ptr(), mode as libc::mode_t)
+            }
+        };
+
+        if -1 == result {
+            let e = io::Error::last_os_error();
+            error!("chown({:?}, {:#o}): {}", path, mode, e);
+            Err(e.raw_os_error().unwrap())
+        } else {
+            Ok(())
+        }
+    }
+
+    fn chown(&mut self, _req: &Request, path: &Path, fh: Option<u64>, uid: Option<u32>, gid: Option<u32>) -> ResultEmpty {
+        let uid = uid.unwrap_or(::std::u32::MAX);   // docs say "-1", but uid_t is unsigned
+        let gid = gid.unwrap_or(::std::u32::MAX);   // ditto for gid_t
+        debug!("chmod: {:?} to {}:{}", path, uid, gid);
+
+        let result = if let Some(fd) = fh {
+            unsafe { libc::fchown(fd as libc::c_int, uid, gid) }
+        } else {
+            let real = self.real_path(path);
+            unsafe {
+                let path_c = CString::from_vec_unchecked(real.into_vec());
+                libc::chown(path_c.as_ptr(), uid, gid)
+            }
+        };
+
+        if -1 == result {
+            let e = io::Error::last_os_error();
+            error!("chmod({:?}, {}, {}): {}", path, uid, gid, e);
+            Err(e.raw_os_error().unwrap())
+        } else {
+            Ok(())
+        }
+    }
+
+    fn truncate(&mut self, _req: &Request, path: &Path, fh: Option<u64>, size: u64) -> ResultEmpty {
+        debug!("truncate: {:?} to {:#x}", path, size);
+
+        let result = if let Some(fd) = fh {
+            unsafe { libc::ftruncate64(fd as libc::c_int, size as i64) }
+        } else {
+            let real = self.real_path(path);
+            unsafe {
+                let path_c = CString::from_vec_unchecked(real.into_vec());
+                libc::truncate64(path_c.as_ptr(), size as i64)
+            }
+        };
+
+        if -1 == result {
+            let e = io::Error::last_os_error();
+            error!("truncate({:?}, {}): {}", path, size, e);
+            Err(e.raw_os_error().unwrap())
+        } else {
+            Ok(())
+        }
+    }
+
+    fn utimens(&mut self, _req: &Request, path: &Path, fh: Option<u64>, atime: Option<Timespec>, mtime: Option<Timespec>) -> ResultEmpty {
+        debug!("utimens: {:?}: {:?}, {:?}", path, atime, mtime);
+
+        const UTIME_OMIT: i64 = ((11 << 30) - 21);
+
+        fn timespec_to_libc(time: Option<Timespec>) -> libc::timespec {
+            if let Some(time) = time {
+                libc::timespec {
+                    tv_sec: time.sec,
+                    tv_nsec: time.nsec as i64,
+                }
+            } else {
+                libc::timespec {
+                    tv_sec: 0,
+                    tv_nsec: UTIME_OMIT,
+                }
+            }
+        }
+
+        let times = [timespec_to_libc(atime), timespec_to_libc(mtime)];
+
+        let result = if let Some(fd) = fh {
+            unsafe { libc::futimens(fd as libc::c_int, &times as *const libc::timespec) }
+        } else {
+            let real = self.real_path(path);
+            unsafe {
+                let path_c = CString::from_vec_unchecked(real.into_vec());
+                libc::utimensat(0, path_c.as_ptr(), &times as *const libc::timespec, 0)
+            }
+        };
+
+        if -1 == result {
+            let e = io::Error::last_os_error();
+            error!("utimens({:?}, {:?}, {:?}): {}", path, atime, mtime, e);
+            Err(e.raw_os_error().unwrap())
+        } else {
+            Ok(())
+        }
     }
 }
 

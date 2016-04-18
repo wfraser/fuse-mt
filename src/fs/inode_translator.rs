@@ -8,7 +8,7 @@ use std::rc::Rc;
 
 use fuse::*;
 use libc;
-use time;
+use time::Timespec;
 
 use super::inode_table::*;
 
@@ -18,8 +18,8 @@ pub struct DirectoryEntry {
 }
 
 pub type ResultEmpty = Result<(), libc::c_int>;
-pub type ResultGetattr = Result<(time::Timespec, FileAttr), libc::c_int>;
-pub type ResultLookup = Result<(time::Timespec, FileAttr, u64), libc::c_int>;
+pub type ResultGetattr = Result<(Timespec, FileAttr), libc::c_int>;
+pub type ResultLookup = Result<(Timespec, FileAttr, u64), libc::c_int>;
 pub type ResultOpen = Result<(u64, u32), libc::c_int>;
 pub type ResultReaddir = Result<Vec<DirectoryEntry>, libc::c_int>;
 pub type ResultData = Result<Vec<u8>, libc::c_int>;
@@ -38,11 +38,34 @@ pub trait PathFilesystem {
         Err(libc::ENOSYS)
     }
 
-    fn getattr(&mut self, _req: &Request, _path: &Path) -> ResultGetattr {
+    fn getattr(&mut self, _req: &Request, _path: &Path, _fh: Option<u64>) -> ResultGetattr {
         Err(libc::ENOSYS)
     }
 
-    // setattr
+    // The following operations in the FUSE C API are all one kernel call: setattr
+    // We split them out to match the C API's behavior.
+
+    fn chmod(&mut self, _req: &Request, _path: &Path, _fh: Option<u64>, _mode: u32) -> ResultEmpty {
+        Err(libc::ENOSYS)
+    }
+
+    fn chown(&mut self, _req: &Request, _path: &Path, _fh: Option<u64>, _uid: Option<u32>, _gid: Option<u32>) -> ResultEmpty {
+        Err(libc::ENOSYS)
+    }
+
+    fn truncate(&mut self, _req: &Request, _path: &Path, _fh: Option<u64>, _size: u64) -> ResultEmpty {
+        Err(libc::ENOSYS)
+    }
+
+    fn utimens(&mut self, _req: &Request, _path: &Path, _fh: Option<u64>, _atime: Option<Timespec>, _mtime: Option<Timespec>) -> ResultEmpty {
+        Err(libc::ENOSYS)
+    }
+
+    fn utimens_macos(&mut self, _req: &Request, _path: &Path, _fh: Option<u64>, _crtime: Option<Timespec>, _chgtime: Option<Timespec>, _bkuptime: Option<Timespec>, _flags: Option<u32>) -> ResultEmpty {
+        Err(libc::ENOSYS)
+    }
+
+    // END OF SETATTR FUNCTIONS
 
     // readlink
 
@@ -176,29 +199,81 @@ impl<T: PathFilesystem> Filesystem for InodeTranslator<T> {
     fn getattr(&mut self, req: &Request, ino: u64, reply: ReplyAttr) {
         let path = get_path!(self, ino, reply);
         debug!("getattr: {:?}", path);
-        match self.target.getattr(req, &path) {
+        match self.target.getattr(req, &path, None) {
             Ok((ref ttl, ref attr)) => reply.attr(ttl, attr),
             Err(e) => reply.error(e),
         }
     }
 
-    /*
     fn setattr(&mut self,
-               req: &Request,
-               ino: u64,
+               req: &Request,               // passed to all
+               ino: u64,                    // translated to path; passed to all
                mode: Option<u32>,           // chmod
                uid: Option<u32>,            // chown
                gid: Option<u32>,            // chown
                size: Option<u64>,           // truncate
                atime: Option<Timespec>,     // utimens
                mtime: Option<Timespec>,     // utimens
-               fh: Option<u64>,             // ?
-               crtime: Option<Timespec>,    // ?
-               chgtime: Option<Timespec>,   // ?
-               bkuptime: Option<Timespec>,  // ?
-               flags: Option<u32>,
-               reply: ReplyAttr)
-    */
+               fh: Option<u64>,             // passed to all
+               crtime: Option<Timespec>,    // utimens_osx  (OS X only)
+               chgtime: Option<Timespec>,   // utimens_osx  (OS X only)
+               bkuptime: Option<Timespec>,  // utimens_osx  (OS X only)
+               flags: Option<u32>,          // utimens_osx  (OS X only)
+               reply: ReplyAttr) {
+        let path = get_path!(self, ino, reply);
+        debug!("setattr: {:?}", path);
+
+        debug!("\tino:\t{:?}", ino);
+        debug!("\tmode:\t{:?}", mode);
+        debug!("\tuid:\t{:?}", uid);
+        debug!("\tgid:\t{:?}", gid);
+        debug!("\tsize:\t{:?}", size);
+        debug!("\tatime:\t{:?}", atime);
+        debug!("\tmtime:\t{:?}", mtime);
+        debug!("\tfh:\t{:?}", fh);
+
+        // TODO: figure out what C FUSE does when only some of these are implemented.
+
+        if mode.is_some() {
+            if let Err(e) = self.target.chmod(req, &path, fh, mode.unwrap()) {
+                reply.error(e);
+                return;
+            }
+        }
+
+        if uid.is_some() || gid.is_some() {
+            if let Err(e) = self.target.chown(req, &path, fh, uid, gid) {
+                reply.error(e);
+                return;
+            }
+        }
+
+        if size.is_some() {
+            if let Err(e) = self.target.truncate(req, &path, fh, size.unwrap()) {
+                reply.error(e);
+                return;
+            }
+        }
+
+        if atime.is_some() || mtime.is_some() {
+            if let Err(e) = self.target.utimens(req, &path, fh, atime, mtime) {
+                reply.error(e);
+                return;
+            }
+        }
+
+        if crtime.is_some() || chgtime.is_some() || bkuptime.is_some() || flags.is_some() {
+            if let Err(e) = self.target.utimens_macos(req, &path, fh, crtime, chgtime, bkuptime, flags) {
+                reply.error(e);
+                return
+            }
+        }
+
+        match self.target.getattr(req, &path, fh) {
+            Ok((ref ttl, ref attr)) => reply.attr(ttl, attr),
+            Err(e) => reply.error(e),
+        }
+   }
 
     // readlink
 
