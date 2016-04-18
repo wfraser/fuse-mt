@@ -54,8 +54,6 @@ mod libc {
 
     pub const UTIME_OMIT: i64 = ((11 << 30) - 21);
 
-    use super::super::super::libc_wrappers;
-
     // Mac OS X does not support futimens; map it to futimes with lower precision.
     #[cfg(target_os = "macos")]
     pub fn futimens(fd: c_int, times: *const timespec) -> c_int {
@@ -98,7 +96,8 @@ mod libc {
     // Mac OS X does not support utimensat; map it to lutimes with lower precision.
     // The relative path feature of utimensat is not supported by this workaround.
     #[cfg(target_os = "macos")]
-    pub fn utimensat(_dirfd_ignored: c_int, path: *const c_char, times: *const timespec) -> c_int {
+    pub fn utimensat_x(_dirfd_ignored: c_int, path: *const c_char, times: *const timespec) -> c_int {
+        use super::super::super::libc_wrappers;
         unsafe {
             assert_eq!(*path, b'/' as c_char); // relative paths are not supported here!
             let mut times_osx = [timespec_to_timeval(&*times),
