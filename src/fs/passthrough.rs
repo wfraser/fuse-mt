@@ -208,7 +208,7 @@ impl PathFilesystem for Passthrough {
 
     fn read(&mut self, _req: &Request, path: &Path, fh: u64, offset: u64, size: u32) -> ResultData {
         debug!("read: {:?} {:#x} @ {:#x}", path, size, offset);
-        let mut file = unsafe { File::from_raw_fd(fh as libc::c_int) };
+        let mut file = unsafe { UnmanagedFile::new(fh) };
 
         let mut data = Vec::<u8>::with_capacity(size as usize);
         unsafe { data.set_len(size as usize) };
@@ -225,15 +225,12 @@ impl PathFilesystem for Passthrough {
             }
         }
 
-        // Release control of the file descriptor so it is not closed when this function returns.
-        file.into_raw_fd();
-
         Ok(data)
     }
 
     fn write(&mut self, _req: &Request, path: &Path, fh: u64, offset: u64, data: &[u8], _flags: u32) -> ResultWrite {
         debug!("write: {:?} {:#x} @ {:#x}", path, data.len(), offset);
-        let mut file = unsafe { File::from_raw_fd(fh as libc::c_int) };
+        let mut file = unsafe { UnmanagedFile::new(fh) };
 
         if let Err(e) = file.seek(SeekFrom::Start(offset)) {
             error!("seek({:?}, {}): {}", path, offset, e);
@@ -247,24 +244,63 @@ impl PathFilesystem for Passthrough {
             }
         };
 
-        // Release control of the file descriptor so it is not closed when this function returns.
-        file.into_raw_fd();
-
         Ok(nwritten)
     }
 
     fn flush(&mut self, _req: &Request, path: &Path, fh: u64, _lock_owner: u64) -> ResultEmpty {
         debug!("flush: {:?}", path);
-        let mut file = unsafe { File::from_raw_fd(fh as libc::c_int) };
+        let mut file = unsafe { UnmanagedFile::new(fh) };
 
         if let Err(e) = file.flush() {
             error!("flush({:?}): {}", path, e);
             return Err(e.raw_os_error().unwrap());
         }
 
-        // Release control of the file descriptor so it is not closed when this function returns.
-        file.into_raw_fd();
-
         Ok(())
+    }
+}
+
+/// A file that is not closed upon leaving scope.
+struct UnmanagedFile {
+    inner: Option<File>,
+}
+
+impl UnmanagedFile {
+    unsafe fn new(fd: u64) -> UnmanagedFile {
+        UnmanagedFile {
+            inner: Some(File::from_raw_fd(fd as i32))
+        }
+    }
+}
+
+impl Drop for UnmanagedFile {
+    fn drop(&mut self) {
+        // Release control of the file descriptor so it is not closed.
+        let file = self.inner.take().unwrap();
+        file.into_raw_fd();
+    }
+}
+
+impl Read for UnmanagedFile {
+    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+        self.inner.as_ref().unwrap().read(buf)
+    }
+    fn read_to_end(&mut self, buf: &mut Vec<u8>) -> io::Result<usize> {
+        self.inner.as_ref().unwrap().read_to_end(buf)
+    }
+}
+
+impl Write for UnmanagedFile {
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+        self.inner.as_ref().unwrap().write(buf)
+    }
+    fn flush(&mut self) -> io::Result<()> {
+        self.inner.as_ref().unwrap().flush()
+    }
+}
+
+impl Seek for UnmanagedFile {
+    fn seek(&mut self, pos: SeekFrom) -> io::Result<u64> {
+        self.inner.as_ref().unwrap().seek(pos)
     }
 }
