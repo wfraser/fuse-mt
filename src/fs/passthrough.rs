@@ -258,6 +258,22 @@ impl PathFilesystem for Passthrough {
 
         Ok(())
     }
+
+    fn fsync(&mut self, _req: &Request, path: &Path, fh: u64, datasync: bool) -> ResultEmpty {
+        debug!("fsync: {:?}, data={:?}", path, datasync);
+        let file = unsafe { UnmanagedFile::new(fh) };
+
+        if let Err(e) = if datasync {
+            file.sync_data()
+        } else {
+            file.sync_all()
+        } {
+            error!("fsync({:?}, {:?}): {}", path, datasync, e);
+            return Err(e.raw_os_error().unwrap());
+        }
+
+        Ok(())
+    }
 }
 
 /// A file that is not closed upon leaving scope.
@@ -270,6 +286,12 @@ impl UnmanagedFile {
         UnmanagedFile {
             inner: Some(File::from_raw_fd(fd as i32))
         }
+    }
+    fn sync_all(&self) -> io::Result<()> {
+        self.inner.as_ref().unwrap().sync_all()
+    }
+    fn sync_data(&self) -> io::Result<()> {
+        self.inner.as_ref().unwrap().sync_data()
     }
 }
 
