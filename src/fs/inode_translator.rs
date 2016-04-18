@@ -20,8 +20,10 @@ pub struct DirectoryEntry {
 pub type ResultEmpty = Result<(), libc::c_int>;
 pub type ResultGetattr = Result<(time::Timespec, FileAttr), libc::c_int>;
 pub type ResultLookup = Result<(time::Timespec, FileAttr, u64), libc::c_int>;
-pub type ResultOpendir = Result<(u64, u32), libc::c_int>;
+pub type ResultOpen = Result<(u64, u32), libc::c_int>;
 pub type ResultReaddir = Result<Vec<DirectoryEntry>, libc::c_int>;
+pub type ResultData = Result<Vec<u8>, libc::c_int>;
+pub type ResultWrite = Result<u32, libc::c_int>;
 
 pub trait PathFilesystem {
     fn init(&mut self, _req: &Request) -> ResultEmpty {
@@ -40,7 +42,7 @@ pub trait PathFilesystem {
         Err(libc::ENOSYS)
     }
 
-    fn opendir(&mut self, _req: &Request, _path: &Path, _flags: u32) -> ResultOpendir {
+    fn opendir(&mut self, _req: &Request, _path: &Path, _flags: u32) -> ResultOpen {
         Err(libc::ENOSYS)
     }
 
@@ -49,6 +51,26 @@ pub trait PathFilesystem {
     }
 
     fn readdir(&mut self, _req: &Request, _path: &Path, _fh: u64, _offset: u64) -> ResultReaddir {
+        Err(libc::ENOSYS)
+    }
+
+    fn open(&mut self, _req: &Request, _path: &Path, _flags: u32) -> ResultOpen {
+        Err(libc::ENOSYS)
+    }
+
+    fn release(&mut self, _req: &Request, _path: &Path, _fh: u64, _flags: u32, _lock_owner: u64, _flush: bool) -> ResultEmpty {
+        Err(libc::ENOSYS)
+    }
+
+    fn read(&mut self, _req: &Request, _path: &Path, _fh: u64, _offset: u64, _size: u32) -> ResultData {
+        Err(libc::ENOSYS)
+    }
+
+    fn write(&mut self, _req: &Request, _path: &Path, _fh: u64, _offset: u64, _data: &[u8], _flags: u32) -> ResultWrite {
+        Err(libc::ENOSYS)
+    }
+
+    fn flush(&mut self, _req: &Request, _path: &Path, _fh: u64, _lock_owner: u64) -> ResultEmpty {
         Err(libc::ENOSYS)
     }
 }
@@ -183,6 +205,66 @@ impl<T: PathFilesystem> Filesystem for InodeTranslator<T> {
             }
         } else {
             reply.error(libc::EINVAL);
+        }
+    }
+
+    fn open(&mut self, req: &Request, ino: u64, flags: u32, reply: ReplyOpen) {
+        if let Some(path) = self.inodes.get_path(ino) {
+            debug!("open: {:?}", path);
+            match self.target.open(req, &path, flags) {
+                Ok((fh, flags)) => reply.opened(fh, flags),
+                Err(e) => reply.error(e),
+            }
+        } else {
+            reply.error(libc::EINVAL);
+        }
+    }
+
+    fn release(&mut self, req: &Request, ino: u64, fh: u64, flags: u32, lock_owner: u64, flush: bool, reply: ReplyEmpty) {
+        if let Some(path) = self.inodes.get_path(ino) {
+            debug!("release: {:?}", path);
+            match self.target.release(req, &path, fh, flags, lock_owner, flush) {
+                Ok(()) => reply.ok(),
+                Err(e) => reply.error(e),
+            }
+        } else {
+            reply.error(libc::EINVAL);
+        }
+    }
+
+    fn read(&mut self, req: &Request, ino: u64, fh: u64, offset: u64, size: u32, reply: ReplyData) {
+        if let Some(path) = self.inodes.get_path(ino) {
+            debug!("read: {:?} {:#x} @ {:#x}", path, size, offset);
+            match self.target.read(req, &path, fh, offset, size) {
+                Ok(ref data) => reply.data(data),
+                Err(e) => reply.error(e),
+            }
+        } else {
+            reply.error(libc::EINVAL);
+        }
+    }
+
+    fn write(&mut self, req: &Request, ino: u64, fh: u64, offset: u64, data: &[u8], flags: u32, reply: ReplyWrite) {
+        if let Some(path) = self.inodes.get_path(ino) {
+            debug!("write: {:?} {:#x} @ {:#x}", path, data.len(), offset);
+            match self.target.write(req, &path, fh, offset, data, flags) {
+                Ok(written) => reply.written(written),
+                Err(e) => reply.error(e),
+            }
+        } else {
+            reply.error(libc::EINVAL)
+        }
+    }
+
+    fn flush(&mut self, req: &Request, ino: u64, fh: u64, lock_owner: u64, reply: ReplyEmpty) {
+        if let Some(path) = self.inodes.get_path(ino) {
+            debug!("flush: {:?}", path);
+            match self.target.flush(req, &path, fh, lock_owner) {
+                Ok(()) => reply.ok(),
+                Err(e) => reply.error(e),
+            }
+        } else {
+            reply.error(libc::EINVAL)
         }
     }
 }

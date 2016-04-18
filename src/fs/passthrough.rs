@@ -6,8 +6,10 @@
 //
 
 use std::ffi::{CStr, OsStr, OsString};
-use std::io;
+use std::fs::File;
+use std::io::{self, Read, Write, Seek, SeekFrom};
 use std::os::unix::ffi::{OsStrExt, OsStringExt};
+use std::os::unix::io::{FromRawFd, IntoRawFd};
 use std::path::{Path, PathBuf};
 
 use super::inode_translator::*;
@@ -52,10 +54,7 @@ impl Passthrough {
             Ok(stat) => {
                 let kind = mode_to_filetype(stat.st_mode);
 
-                let mut mode = stat.st_mode & 0o7777; // st_mode encodes the type AND the mode.
-                /*
-                    mode &= !0o222; // disable the write bits if we're not in RW mode.
-                */
+                let mode = stat.st_mode & 0o7777; // st_mode encodes the type AND the mode.
 
                 Ok(FileAttr {
                     ino: 0,
@@ -114,7 +113,7 @@ impl PathFilesystem for Passthrough {
         }
     }
 
-    fn opendir(&mut self, _req: &Request, path: &Path, _flags: u32) -> ResultOpendir {
+    fn opendir(&mut self, _req: &Request, path: &Path, _flags: u32) -> ResultOpen {
         let real = self.real_path(path);
         debug!("opendir: {:?}", real);
         match libc_wrappers::opendir(real) {
@@ -187,5 +186,85 @@ impl PathFilesystem for Passthrough {
         }
 
         Ok(entries)
+    }
+
+    fn open(&mut self, _req: &Request, path: &Path, flags: u32) -> ResultOpen {
+        debug!("open: {:?} flags={:#x}", path, flags);
+
+        let real = self.real_path(path);
+        match libc_wrappers::open(real, flags as libc::c_int) {
+            Ok(fh) => Ok((fh as u64, flags)),
+            Err(e) => {
+                error!("open({:?}): {}", path, io::Error::from_raw_os_error(e));
+                Err(e)
+            }
+        }
+    }
+
+    fn release(&mut self, _req: &Request, path: &Path, fh: u64, _flags: u32, _lock_owner: u64, _flush: bool) -> ResultEmpty {
+        debug!("release: {:?}", path);
+        libc_wrappers::close(fh as usize)
+    }
+
+    fn read(&mut self, _req: &Request, path: &Path, fh: u64, offset: u64, size: u32) -> ResultData {
+        debug!("read: {:?} {:#x} @ {:#x}", path, size, offset);
+        let mut file = unsafe { File::from_raw_fd(fh as libc::c_int) };
+
+        let mut data = Vec::<u8>::with_capacity(size as usize);
+        unsafe { data.set_len(size as usize) };
+
+        if let Err(e) = file.seek(SeekFrom::Start(offset)) {
+            error!("seek({:?}, {}): {}", path, offset, e);
+            return Err(e.raw_os_error().unwrap());
+        }
+        match file.read(&mut data) {
+            Ok(n) => { data.truncate(n); },
+            Err(e) => {
+                error!("read {:?}, {:#x} @ {:#x}: {}", path, size, offset, e);
+                return Err(e.raw_os_error().unwrap());
+            }
+        }
+
+        // Release control of the file descriptor so it is not closed when this function returns.
+        file.into_raw_fd();
+
+        Ok(data)
+    }
+
+    fn write(&mut self, _req: &Request, path: &Path, fh: u64, offset: u64, data: &[u8], _flags: u32) -> ResultWrite {
+        debug!("write: {:?} {:#x} @ {:#x}", path, data.len(), offset);
+        let mut file = unsafe { File::from_raw_fd(fh as libc::c_int) };
+
+        if let Err(e) = file.seek(SeekFrom::Start(offset)) {
+            error!("seek({:?}, {}): {}", path, offset, e);
+            return Err(e.raw_os_error().unwrap());
+        }
+        let nwritten: u32 = match file.write(data) {
+            Ok(n) => n as u32,
+            Err(e) => {
+                error!("write {:?}, {:#x} @ {:#x}: {}", path, data.len(), offset, e);
+                return Err(e.raw_os_error().unwrap());
+            }
+        };
+
+        // Release control of the file descriptor so it is not closed when this function returns.
+        file.into_raw_fd();
+
+        Ok(nwritten)
+    }
+
+    fn flush(&mut self, _req: &Request, path: &Path, fh: u64, _lock_owner: u64) -> ResultEmpty {
+        debug!("flush: {:?}", path);
+        let mut file = unsafe { File::from_raw_fd(fh as libc::c_int) };
+
+        if let Err(e) = file.flush() {
+            error!("flush({:?}): {}", path, e);
+            return Err(e.raw_os_error().unwrap());
+        }
+
+        // Release control of the file descriptor so it is not closed when this function returns.
+        file.into_raw_fd();
+
+        Ok(())
     }
 }
