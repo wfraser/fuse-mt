@@ -516,6 +516,16 @@ impl PathFilesystem for Passthrough {
             Ok(())
         }
     }
+
+    fn readlink(&mut self, _req: &Request, path: &Path) -> ResultData {
+        debug!("readlink: {:?}", path);
+
+        let real = self.real_path(path);
+        match ::std::fs::read_link(real) {
+            Ok(target) => Ok(target.into_os_string().into_vec()),
+            Err(e) => Err(e.raw_os_error().unwrap()),
+        }
+    }
 }
 
 /// A file that is not closed upon leaving scope.

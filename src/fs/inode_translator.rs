@@ -67,7 +67,9 @@ pub trait PathFilesystem {
 
     // END OF SETATTR FUNCTIONS
 
-    // readlink
+    fn readlink(&mut self, _req: &Request, _path: &Path) -> ResultData {
+        Err(libc::ENOSYS)
+    }
 
     // mknod
 
@@ -275,7 +277,14 @@ impl<T: PathFilesystem> Filesystem for InodeTranslator<T> {
         }
    }
 
-    // readlink
+    fn readlink(&mut self, req: &Request, ino: u64, reply: ReplyData) {
+        let path = get_path!(self, ino, reply);
+        debug!("readlink: {:?}", path);
+        match self.target.readlink(req, &path) {
+            Ok(data) => reply.data(&data),
+            Err(e) => reply.error(e),
+        }
+    }
 
     // mknod
 
