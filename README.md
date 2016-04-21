@@ -4,6 +4,8 @@ This code is a wrapper on top of the Rust FUSE crate that aims to:
 * Dispatch system calls on multiple threads, so that e.g. I/O doesn't block directory listing.
 * Translate inodes into paths, to simplify filesystem implementation.
 
+It includes a sample filesystem that uses the crate to pass all system calls through to another filesystem at any arbitrary path.
+
 This is a work-in-progress. I'm going to get the inode/path translation working first, then make it multithreaded.
 
 Some random notes on the implementation:
