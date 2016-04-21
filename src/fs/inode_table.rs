@@ -4,14 +4,14 @@
 
 use std::collections::BTreeMap;
 use std::collections::btree_map::Entry::*;
-use std::rc::Rc;
+use std::sync::Arc;
 use std::path::{Path, PathBuf};
 
 pub type Inode = u64;
 
 pub struct InodeTable {
-    path_to_inode: BTreeMap<Rc<PathBuf>, Inode>,
-    inode_to_path: BTreeMap<Inode, Rc<PathBuf>>,
+    path_to_inode: BTreeMap<Arc<PathBuf>, Inode>,
+    inode_to_path: BTreeMap<Inode, Arc<PathBuf>>,
     next_inode: u64,
 }
 
@@ -24,7 +24,7 @@ impl InodeTable {
         }
     }
 
-    pub fn add(&mut self, path: Rc<PathBuf>) -> Inode {
+    pub fn add(&mut self, path: Arc<PathBuf>) -> Inode {
         let inode = self.next_inode;
         self.next_inode += 1;
         match self.path_to_inode.insert(path.clone(), inode) {
@@ -35,7 +35,7 @@ impl InodeTable {
         inode
     }
 
-    pub fn add_or_get(&mut self, path: Rc<PathBuf>) -> Inode {
+    pub fn add_or_get(&mut self, path: Arc<PathBuf>) -> Inode {
         match self.path_to_inode.entry(path.clone()) {
             Vacant(entry) => {
                 let inode = self.next_inode;
@@ -50,7 +50,7 @@ impl InodeTable {
         }
     }
 
-    pub fn get_path(&self, inode: Inode) -> Option<Rc<PathBuf>> {
+    pub fn get_path(&self, inode: Inode) -> Option<Arc<PathBuf>> {
         match self.inode_to_path.get(&inode) {
             Some(rc) => Some(rc.clone()),
             None     => None
@@ -76,7 +76,7 @@ impl Pathish {
     }
 }
 
-impl ::std::borrow::Borrow<Pathish> for Rc<PathBuf> {
+impl ::std::borrow::Borrow<Pathish> for Arc<PathBuf> {
     fn borrow(&self) -> &Pathish {
         Pathish::new(self.as_path())
     }

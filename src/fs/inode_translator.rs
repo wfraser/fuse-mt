@@ -1,16 +1,40 @@
-// InodeTranslator :: A wrapper around FUSE that presents paths instead of inodes.
+// InodeTranslator :: A wrapper around FUSE that presents paths instead of inodes and dispatches
+//                    I/O operations to multiple threads.
 //
 // Copyright (c) 2016 by William R. Fraser
 //
 
 use std::path::{Path, PathBuf};
-use std::rc::Rc;
+use std::sync::Arc;
 
 use fuse::*;
 use libc;
+use threadpool::ThreadPool;
 use time::Timespec;
 
 use super::inode_table::*;
+
+pub struct RequestInfo {
+    pub unique: u64,
+    pub uid: u32,
+    pub gid: u32,
+    pub pid: u32,
+}
+
+trait IntoRequestInfo {
+    fn info(&self) -> RequestInfo;
+}
+
+impl<'a> IntoRequestInfo for Request<'a> {
+    fn info(&self) -> RequestInfo {
+        RequestInfo {
+            unique: self.unique(),
+            uid: self.uid(),
+            gid: self.gid(),
+            pid: self.pid(),
+        }
+    }
+}
 
 pub struct DirectoryEntry {
     pub name: PathBuf,
@@ -26,48 +50,48 @@ pub type ResultData = Result<Vec<u8>, libc::c_int>;
 pub type ResultWrite = Result<u32, libc::c_int>;
 
 pub trait PathFilesystem {
-    fn init(&mut self, _req: &Request) -> ResultEmpty {
+    fn init(&self, _req: RequestInfo) -> ResultEmpty {
         Err(0)
     }
 
-    fn destroy(&mut self, _req: &Request) {
+    fn destroy(&self, _req: RequestInfo) {
         // Nothing.
     }
 
-    fn lookup(&mut self, _req: &Request, _parent: &Path, _name: &Path) -> ResultLookup {
+    fn lookup(&self, _req: RequestInfo, _parent: &Path, _name: &Path) -> ResultLookup {
         Err(libc::ENOSYS)
     }
 
-    fn getattr(&mut self, _req: &Request, _path: &Path, _fh: Option<u64>) -> ResultGetattr {
+    fn getattr(&self, _req: RequestInfo, _path: &Path, _fh: Option<u64>) -> ResultGetattr {
         Err(libc::ENOSYS)
     }
 
     // The following operations in the FUSE C API are all one kernel call: setattr
     // We split them out to match the C API's behavior.
 
-    fn chmod(&mut self, _req: &Request, _path: &Path, _fh: Option<u64>, _mode: u32) -> ResultEmpty {
+    fn chmod(&self, _req: RequestInfo, _path: &Path, _fh: Option<u64>, _mode: u32) -> ResultEmpty {
         Err(libc::ENOSYS)
     }
 
-    fn chown(&mut self, _req: &Request, _path: &Path, _fh: Option<u64>, _uid: Option<u32>, _gid: Option<u32>) -> ResultEmpty {
+    fn chown(&self, _req: RequestInfo, _path: &Path, _fh: Option<u64>, _uid: Option<u32>, _gid: Option<u32>) -> ResultEmpty {
         Err(libc::ENOSYS)
     }
 
-    fn truncate(&mut self, _req: &Request, _path: &Path, _fh: Option<u64>, _size: u64) -> ResultEmpty {
+    fn truncate(&self, _req: RequestInfo, _path: &Path, _fh: Option<u64>, _size: u64) -> ResultEmpty {
         Err(libc::ENOSYS)
     }
 
-    fn utimens(&mut self, _req: &Request, _path: &Path, _fh: Option<u64>, _atime: Option<Timespec>, _mtime: Option<Timespec>) -> ResultEmpty {
+    fn utimens(&self, _req: RequestInfo, _path: &Path, _fh: Option<u64>, _atime: Option<Timespec>, _mtime: Option<Timespec>) -> ResultEmpty {
         Err(libc::ENOSYS)
     }
 
-    fn utimens_macos(&mut self, _req: &Request, _path: &Path, _fh: Option<u64>, _crtime: Option<Timespec>, _chgtime: Option<Timespec>, _bkuptime: Option<Timespec>, _flags: Option<u32>) -> ResultEmpty {
+    fn utimens_macos(&self, _req: RequestInfo, _path: &Path, _fh: Option<u64>, _crtime: Option<Timespec>, _chgtime: Option<Timespec>, _bkuptime: Option<Timespec>, _flags: Option<u32>) -> ResultEmpty {
         Err(libc::ENOSYS)
     }
 
     // END OF SETATTR FUNCTIONS
 
-    fn readlink(&mut self, _req: &Request, _path: &Path) -> ResultData {
+    fn readlink(&self, _req: RequestInfo, _path: &Path) -> ResultData {
         Err(libc::ENOSYS)
     }
 
@@ -85,39 +109,39 @@ pub trait PathFilesystem {
 
     // link
 
-    fn open(&mut self, _req: &Request, _path: &Path, _flags: u32) -> ResultOpen {
+    fn open(&self, _req: RequestInfo, _path: &Path, _flags: u32) -> ResultOpen {
         Err(libc::ENOSYS)
     }
 
-    fn read(&mut self, _req: &Request, _path: &Path, _fh: u64, _offset: u64, _size: u32) -> ResultData {
+    fn read(&self, _req: RequestInfo, _path: &Path, _fh: u64, _offset: u64, _size: u32) -> ResultData {
         Err(libc::ENOSYS)
     }
 
-    fn write(&mut self, _req: &Request, _path: &Path, _fh: u64, _offset: u64, _data: &[u8], _flags: u32) -> ResultWrite {
+    fn write(&self, _req: RequestInfo, _path: &Path, _fh: u64, _offset: u64, _data: &[u8], _flags: u32) -> ResultWrite {
         Err(libc::ENOSYS)
     }
 
-    fn flush(&mut self, _req: &Request, _path: &Path, _fh: u64, _lock_owner: u64) -> ResultEmpty {
+    fn flush(&self, _req: RequestInfo, _path: &Path, _fh: u64, _lock_owner: u64) -> ResultEmpty {
         Err(libc::ENOSYS)
     }
 
-    fn release(&mut self, _req: &Request, _path: &Path, _fh: u64, _flags: u32, _lock_owner: u64, _flush: bool) -> ResultEmpty {
+    fn release(&self, _req: RequestInfo, _path: &Path, _fh: u64, _flags: u32, _lock_owner: u64, _flush: bool) -> ResultEmpty {
         Err(libc::ENOSYS)
     }
 
-    fn fsync(&mut self, _req: &Request, _path: &Path, _fh: u64, _datasync: bool) -> ResultEmpty {
+    fn fsync(&self, _req: RequestInfo, _path: &Path, _fh: u64, _datasync: bool) -> ResultEmpty {
         Err(libc::ENOSYS)
     }
 
-    fn opendir(&mut self, _req: &Request, _path: &Path, _flags: u32) -> ResultOpen {
+    fn opendir(&self, _req: RequestInfo, _path: &Path, _flags: u32) -> ResultOpen {
         Err(libc::ENOSYS)
     }
 
-    fn readdir(&mut self, _req: &Request, _path: &Path, _fh: u64, _offset: u64) -> ResultReaddir {
+    fn readdir(&self, _req: RequestInfo, _path: &Path, _fh: u64, _offset: u64) -> ResultReaddir {
         Err(libc::ENOSYS)
     }
 
-    fn releasedir(&mut self, _req: &Request, _path: &Path, _fh: u64, _flags: u32) -> ResultEmpty {
+    fn releasedir(&self, _req: RequestInfo, _path: &Path, _fh: u64, _flags: u32) -> ResultEmpty {
         Err(libc::ENOSYS)
     }
 
@@ -145,17 +169,19 @@ pub trait PathFilesystem {
 }
 
 pub struct InodeTranslator<T> {
-    target: T,
+    target: Arc<T>,
     inodes: InodeTable,
+    threads: ThreadPool,
 }
 
-impl<T: PathFilesystem> InodeTranslator<T> {
-    pub fn new(target_fs: T) -> InodeTranslator<T> {
+impl<T: PathFilesystem + Sync + Send + 'static> InodeTranslator<T> {
+    pub fn new(target_fs: T, num_threads: usize) -> InodeTranslator<T> {
         let mut translator = InodeTranslator {
-            target: target_fs,
-            inodes: InodeTable::new()
+            target: Arc::new(target_fs),
+            inodes: InodeTable::new(),
+            threads: ThreadPool::new(num_threads),
         };
-        translator.inodes.add(Rc::new(PathBuf::from("/")));
+        translator.inodes.add(Arc::new(PathBuf::from("/")));
         translator
     }
 }
@@ -171,22 +197,22 @@ macro_rules! get_path {
     }
 }
 
-impl<T: PathFilesystem> Filesystem for InodeTranslator<T> {
+impl<T: PathFilesystem + Sync + Send + 'static> Filesystem for InodeTranslator<T> {
     fn init(&mut self, req: &Request) -> Result<(), libc::c_int> {
         debug!("init");
-        self.target.init(req)
+        self.target.init(req.info())
     }
 
     fn destroy(&mut self, req: &Request) {
         debug!("destroy");
-        self.target.destroy(req);
+        self.target.destroy(req.info());
     }
 
     fn lookup(&mut self, req: &Request, parent: u64, name: &Path, reply: ReplyEntry) {
         let parent_path = get_path!(self, parent, reply);
         debug!("lookup: {:?}, {:?}", parent_path, name);
-        let path = Rc::new((*parent_path).clone().join(name));
-        match self.target.lookup(req, Path::new(&*parent_path), name) {
+        let path = Arc::new((*parent_path).clone().join(name));
+        match self.target.lookup(req.info(), Path::new(&*parent_path), name) {
             Ok((ref ttl, ref mut attr, generation)) => {
                 let ino = self.inodes.add_or_get(path.clone());
                 attr.ino = ino;
@@ -201,7 +227,7 @@ impl<T: PathFilesystem> Filesystem for InodeTranslator<T> {
     fn getattr(&mut self, req: &Request, ino: u64, reply: ReplyAttr) {
         let path = get_path!(self, ino, reply);
         debug!("getattr: {:?}", path);
-        match self.target.getattr(req, &path, None) {
+        match self.target.getattr(req.info(), &path, None) {
             Ok((ref ttl, ref attr)) => reply.attr(ttl, attr),
             Err(e) => reply.error(e),
         }
@@ -237,41 +263,41 @@ impl<T: PathFilesystem> Filesystem for InodeTranslator<T> {
         // TODO: figure out what C FUSE does when only some of these are implemented.
 
         if mode.is_some() {
-            if let Err(e) = self.target.chmod(req, &path, fh, mode.unwrap()) {
+            if let Err(e) = self.target.chmod(req.info(), &path, fh, mode.unwrap()) {
                 reply.error(e);
                 return;
             }
         }
 
         if uid.is_some() || gid.is_some() {
-            if let Err(e) = self.target.chown(req, &path, fh, uid, gid) {
+            if let Err(e) = self.target.chown(req.info(), &path, fh, uid, gid) {
                 reply.error(e);
                 return;
             }
         }
 
         if size.is_some() {
-            if let Err(e) = self.target.truncate(req, &path, fh, size.unwrap()) {
+            if let Err(e) = self.target.truncate(req.info(), &path, fh, size.unwrap()) {
                 reply.error(e);
                 return;
             }
         }
 
         if atime.is_some() || mtime.is_some() {
-            if let Err(e) = self.target.utimens(req, &path, fh, atime, mtime) {
+            if let Err(e) = self.target.utimens(req.info(), &path, fh, atime, mtime) {
                 reply.error(e);
                 return;
             }
         }
 
         if crtime.is_some() || chgtime.is_some() || bkuptime.is_some() || flags.is_some() {
-            if let Err(e) = self.target.utimens_macos(req, &path, fh, crtime, chgtime, bkuptime, flags) {
+            if let Err(e) = self.target.utimens_macos(req.info(), &path, fh, crtime, chgtime, bkuptime, flags) {
                 reply.error(e);
                 return
             }
         }
 
-        match self.target.getattr(req, &path, fh) {
+        match self.target.getattr(req.info(), &path, fh) {
             Ok((ref ttl, ref attr)) => reply.attr(ttl, attr),
             Err(e) => reply.error(e),
         }
@@ -280,7 +306,7 @@ impl<T: PathFilesystem> Filesystem for InodeTranslator<T> {
     fn readlink(&mut self, req: &Request, ino: u64, reply: ReplyData) {
         let path = get_path!(self, ino, reply);
         debug!("readlink: {:?}", path);
-        match self.target.readlink(req, &path) {
+        match self.target.readlink(req.info(), &path) {
             Ok(data) => reply.data(&data),
             Err(e) => reply.error(e),
         }
@@ -303,7 +329,7 @@ impl<T: PathFilesystem> Filesystem for InodeTranslator<T> {
     fn open(&mut self, req: &Request, ino: u64, flags: u32, reply: ReplyOpen) {
         let path = get_path!(self, ino, reply);
         debug!("open: {:?}", path);
-        match self.target.open(req, &path, flags) {
+        match self.target.open(req.info(), &path, flags) {
             Ok((fh, flags)) => reply.opened(fh, flags),
             Err(e) => reply.error(e),
         }
@@ -312,34 +338,50 @@ impl<T: PathFilesystem> Filesystem for InodeTranslator<T> {
     fn read(&mut self, req: &Request, ino: u64, fh: u64, offset: u64, size: u32, reply: ReplyData) {
         let path = get_path!(self, ino, reply);
         debug!("read: {:?} {:#x} @ {:#x}", path, size, offset);
-        match self.target.read(req, &path, fh, offset, size) {
-            Ok(ref data) => reply.data(data),
-            Err(e) => reply.error(e),
-        }
+        let target = self.target.clone();
+        let req_info = req.info();
+        self.threads.execute(move|| {
+            match target.read(req_info, &path, fh, offset, size) {
+                Ok(ref data) => reply.data(data),
+                Err(e) => reply.error(e),
+            }
+        });
     }
 
     fn write(&mut self, req: &Request, ino: u64, fh: u64, offset: u64, data: &[u8], flags: u32, reply: ReplyWrite) {
         let path = get_path!(self, ino, reply);
         debug!("write: {:?} {:#x} @ {:#x}", path, data.len(), offset);
-        match self.target.write(req, &path, fh, offset, data, flags) {
-            Ok(written) => reply.written(written),
-            Err(e) => reply.error(e),
-        }
+        let target = self.target.clone();
+        let req_info = req.info();
+
+        // TODO: it would be better if rust-fuse gave us the buffer by value so we could avoid this copy
+        let data_buf = Vec::from(data);
+
+        self.threads.execute(move|| {
+            match target.write(req_info, &path, fh, offset, &data_buf, flags) {
+                Ok(written) => reply.written(written),
+                Err(e) => reply.error(e),
+            }
+        });
     }
 
     fn flush(&mut self, req: &Request, ino: u64, fh: u64, lock_owner: u64, reply: ReplyEmpty) {
         let path = get_path!(self, ino, reply);
         debug!("flush: {:?}", path);
-        match self.target.flush(req, &path, fh, lock_owner) {
-            Ok(()) => reply.ok(),
-            Err(e) => reply.error(e),
-        }
+        let target = self.target.clone();
+        let req_info = req.info();
+        self.threads.execute(move|| {
+            match target.flush(req_info, &path, fh, lock_owner) {
+                Ok(()) => reply.ok(),
+                Err(e) => reply.error(e),
+            }
+        });
     }
 
     fn release(&mut self, req: &Request, ino: u64, fh: u64, flags: u32, lock_owner: u64, flush: bool, reply: ReplyEmpty) {
         let path = get_path!(self, ino, reply);
         debug!("release: {:?}", path);
-        match self.target.release(req, &path, fh, flags, lock_owner, flush) {
+        match self.target.release(req.info(), &path, fh, flags, lock_owner, flush) {
             Ok(()) => reply.ok(),
             Err(e) => reply.error(e),
         }
@@ -348,16 +390,20 @@ impl<T: PathFilesystem> Filesystem for InodeTranslator<T> {
     fn fsync(&mut self, req: &Request, ino: u64, fh: u64, datasync: bool, reply: ReplyEmpty) {
         let path = get_path!(self, ino, reply);
         debug!("fsync: {:?}", path);
-        match self.target.fsync(req, &path, fh, datasync) {
-            Ok(()) => reply.ok(),
-            Err(e) => reply.error(e),
-        }
+        let target = self.target.clone();
+        let req_info = req.info();
+        self.threads.execute(move|| {
+            match target.fsync(req_info, &path, fh, datasync) {
+                Ok(()) => reply.ok(),
+                Err(e) => reply.error(e),
+            }
+        });
     }
 
     fn opendir(&mut self, req: &Request, ino: u64, flags: u32, reply: ReplyOpen) {
         let path = get_path!(self, ino, reply);
         debug!("opendir: {:?}", path);
-        match self.target.opendir(req, &path, flags) {
+        match self.target.opendir(req.info(), &path, flags) {
             Ok((fh, flags)) => reply.opened(fh, flags),
             Err(e) => reply.error(e),
         }
@@ -366,7 +412,7 @@ impl<T: PathFilesystem> Filesystem for InodeTranslator<T> {
     fn readdir(&mut self, req: &Request, ino: u64, fh: u64, offset: u64, mut reply: ReplyDirectory) {
         let path = get_path!(self, ino, reply);
         debug!("readdir: {:?} @ {}", path, offset);
-        match self.target.readdir(req, &path, fh, offset) {
+        match self.target.readdir(req.info(), &path, fh, offset) {
             Ok(entries) => {
                 let parent_inode = if ino == 1 {
                     ino
@@ -389,7 +435,7 @@ impl<T: PathFilesystem> Filesystem for InodeTranslator<T> {
                     } else if entry.name == Path::new("..") {
                         parent_inode
                     } else {
-                        let path = Rc::new(path.clone().join(&entry.name));
+                        let path = Arc::new(path.clone().join(&entry.name));
                         self.inodes.add_or_get(path)
                     };
 
@@ -416,7 +462,7 @@ impl<T: PathFilesystem> Filesystem for InodeTranslator<T> {
     fn releasedir(&mut self, req: &Request, ino: u64, fh: u64, flags: u32, reply: ReplyEmpty) {
         let path = get_path!(self, ino, reply);
         debug!("releasedir: {:?}", path);
-        match self.target.releasedir(req, &path, fh, flags) {
+        match self.target.releasedir(req.info(), &path, fh, flags) {
             Ok(()) => reply.ok(),
             Err(e) => reply.error(e),
         }

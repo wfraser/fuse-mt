@@ -10,6 +10,7 @@ extern crate daemonize;
 extern crate fuse;
 extern crate libc;
 extern crate syslog;
+extern crate threadpool;
 extern crate time;
 
 #[macro_use]
@@ -48,7 +49,7 @@ fn main() {
         target: args[1].clone(),
     };
 
-    let translator = fs::InodeTranslator::new(filesystem);
+    let translator = fs::InodeTranslator::new(filesystem, 1);
 
     let fuse_args: Vec<&OsStr> = vec![&OsStr::new("-o"), &OsStr::new("auto_unmount")];
 

@@ -96,7 +96,7 @@ mod libc {
     // Mac OS X does not support utimensat; map it to lutimes with lower precision.
     // The relative path feature of utimensat is not supported by this workaround.
     #[cfg(target_os = "macos")]
-    pub fn utimensat_x(_dirfd_ignored: c_int, path: *const c_char, times: *const timespec) -> c_int {
+    pub fn utimensat(_dirfd_ignored: c_int, path: *const c_char, times: *const timespec) -> c_int {
         use super::super::super::libc_wrappers;
         unsafe {
             assert_eq!(*path, b'/' as c_char); // relative paths are not supported here!
@@ -193,7 +193,7 @@ impl Passthrough {
                 .into_os_string()
     }
 
-    fn stat_real(&mut self, path: &Path) -> io::Result<FileAttr> {
+    fn stat_real(&self, path: &Path) -> io::Result<FileAttr> {
         let real: OsString = self.real_path(path);
         debug!("stat_real: {:?}", real);
 
@@ -213,16 +213,16 @@ impl Passthrough {
 const TTL: Timespec = Timespec { sec: 1, nsec: 0 };
 
 impl PathFilesystem for Passthrough {
-    fn init(&mut self, _req: &Request) -> ResultEmpty {
+    fn init(&self, _req: RequestInfo) -> ResultEmpty {
         debug!("init");
         Ok(())
     }
 
-    fn destroy(&mut self, _req: &Request) {
+    fn destroy(&self, _req: RequestInfo) {
         debug!("destroy");
     }
 
-    fn getattr(&mut self, _req: &Request, path: &Path, fh: Option<u64>) -> ResultGetattr {
+    fn getattr(&self, _req: RequestInfo, path: &Path, fh: Option<u64>) -> ResultGetattr {
         debug!("getattr: {:?}", path);
 
         if let Some(fh) = fh {
@@ -238,7 +238,7 @@ impl PathFilesystem for Passthrough {
         }
     }
 
-    fn lookup(&mut self, _req: &Request, parent: &Path, name: &Path) -> ResultLookup {
+    fn lookup(&self, _req: RequestInfo, parent: &Path, name: &Path) -> ResultLookup {
         debug!("lookup: {:?}/{:?}", parent, name);
 
         let path = PathBuf::from(parent).join(name);
@@ -248,7 +248,7 @@ impl PathFilesystem for Passthrough {
         }
     }
 
-    fn opendir(&mut self, _req: &Request, path: &Path, _flags: u32) -> ResultOpen {
+    fn opendir(&self, _req: RequestInfo, path: &Path, _flags: u32) -> ResultOpen {
         let real = self.real_path(path);
         debug!("opendir: {:?}", real);
         match libc_wrappers::opendir(real) {
@@ -257,12 +257,12 @@ impl PathFilesystem for Passthrough {
         }
     }
 
-    fn releasedir(&mut self, _req: &Request, path: &Path, fh: u64, _flags: u32) -> ResultEmpty {
+    fn releasedir(&self, _req: RequestInfo, path: &Path, fh: u64, _flags: u32) -> ResultEmpty {
         debug!("releasedir: {:?}", path);
         libc_wrappers::closedir(fh)
     }
 
-    fn readdir(&mut self, _req: &Request, path: &Path, fh: u64, offset: u64) -> ResultReaddir {
+    fn readdir(&self, _req: RequestInfo, path: &Path, fh: u64, offset: u64) -> ResultReaddir {
         debug!("readdir: {:?}", path);
         let mut entries: Vec<DirectoryEntry> = vec![];
 
@@ -323,7 +323,7 @@ impl PathFilesystem for Passthrough {
         Ok(entries)
     }
 
-    fn open(&mut self, _req: &Request, path: &Path, flags: u32) -> ResultOpen {
+    fn open(&self, _req: RequestInfo, path: &Path, flags: u32) -> ResultOpen {
         debug!("open: {:?} flags={:#x}", path, flags);
 
         let real = self.real_path(path);
@@ -336,12 +336,12 @@ impl PathFilesystem for Passthrough {
         }
     }
 
-    fn release(&mut self, _req: &Request, path: &Path, fh: u64, _flags: u32, _lock_owner: u64, _flush: bool) -> ResultEmpty {
+    fn release(&self, _req: RequestInfo, path: &Path, fh: u64, _flags: u32, _lock_owner: u64, _flush: bool) -> ResultEmpty {
         debug!("release: {:?}", path);
         libc_wrappers::close(fh)
     }
 
-    fn read(&mut self, _req: &Request, path: &Path, fh: u64, offset: u64, size: u32) -> ResultData {
+    fn read(&self, _req: RequestInfo, path: &Path, fh: u64, offset: u64, size: u32) -> ResultData {
         debug!("read: {:?} {:#x} @ {:#x}", path, size, offset);
         let mut file = unsafe { UnmanagedFile::new(fh) };
 
@@ -363,7 +363,7 @@ impl PathFilesystem for Passthrough {
         Ok(data)
     }
 
-    fn write(&mut self, _req: &Request, path: &Path, fh: u64, offset: u64, data: &[u8], _flags: u32) -> ResultWrite {
+    fn write(&self, _req: RequestInfo, path: &Path, fh: u64, offset: u64, data: &[u8], _flags: u32) -> ResultWrite {
         debug!("write: {:?} {:#x} @ {:#x}", path, data.len(), offset);
         let mut file = unsafe { UnmanagedFile::new(fh) };
 
@@ -382,7 +382,7 @@ impl PathFilesystem for Passthrough {
         Ok(nwritten)
     }
 
-    fn flush(&mut self, _req: &Request, path: &Path, fh: u64, _lock_owner: u64) -> ResultEmpty {
+    fn flush(&self, _req: RequestInfo, path: &Path, fh: u64, _lock_owner: u64) -> ResultEmpty {
         debug!("flush: {:?}", path);
         let mut file = unsafe { UnmanagedFile::new(fh) };
 
@@ -394,7 +394,7 @@ impl PathFilesystem for Passthrough {
         Ok(())
     }
 
-    fn fsync(&mut self, _req: &Request, path: &Path, fh: u64, datasync: bool) -> ResultEmpty {
+    fn fsync(&self, _req: RequestInfo, path: &Path, fh: u64, datasync: bool) -> ResultEmpty {
         debug!("fsync: {:?}, data={:?}", path, datasync);
         let file = unsafe { UnmanagedFile::new(fh) };
 
@@ -410,7 +410,7 @@ impl PathFilesystem for Passthrough {
         Ok(())
     }
 
-    fn chmod(&mut self, _req: &Request, path: &Path, fh: Option<u64>, mode: u32) -> ResultEmpty {
+    fn chmod(&self, _req: RequestInfo, path: &Path, fh: Option<u64>, mode: u32) -> ResultEmpty {
         debug!("chown: {:?} to {:#o}", path, mode);
 
         let result = if let Some(fh) = fh {
@@ -432,7 +432,7 @@ impl PathFilesystem for Passthrough {
         }
     }
 
-    fn chown(&mut self, _req: &Request, path: &Path, fh: Option<u64>, uid: Option<u32>, gid: Option<u32>) -> ResultEmpty {
+    fn chown(&self, _req: RequestInfo, path: &Path, fh: Option<u64>, uid: Option<u32>, gid: Option<u32>) -> ResultEmpty {
         let uid = uid.unwrap_or(::std::u32::MAX);   // docs say "-1", but uid_t is unsigned
         let gid = gid.unwrap_or(::std::u32::MAX);   // ditto for gid_t
         debug!("chmod: {:?} to {}:{}", path, uid, gid);
@@ -456,7 +456,7 @@ impl PathFilesystem for Passthrough {
         }
     }
 
-    fn truncate(&mut self, _req: &Request, path: &Path, fh: Option<u64>, size: u64) -> ResultEmpty {
+    fn truncate(&self, _req: RequestInfo, path: &Path, fh: Option<u64>, size: u64) -> ResultEmpty {
         debug!("truncate: {:?} to {:#x}", path, size);
 
         let result = if let Some(fd) = fh {
@@ -478,7 +478,7 @@ impl PathFilesystem for Passthrough {
         }
     }
 
-    fn utimens(&mut self, _req: &Request, path: &Path, fh: Option<u64>, atime: Option<Timespec>, mtime: Option<Timespec>) -> ResultEmpty {
+    fn utimens(&self, _req: RequestInfo, path: &Path, fh: Option<u64>, atime: Option<Timespec>, mtime: Option<Timespec>) -> ResultEmpty {
         debug!("utimens: {:?}: {:?}, {:?}", path, atime, mtime);
 
 
@@ -517,7 +517,7 @@ impl PathFilesystem for Passthrough {
         }
     }
 
-    fn readlink(&mut self, _req: &Request, path: &Path) -> ResultData {
+    fn readlink(&self, _req: RequestInfo, path: &Path) -> ResultData {
         debug!("readlink: {:?}", path);
 
         let real = self.real_path(path);
