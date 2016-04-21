@@ -1,5 +1,5 @@
-// InodeTranslator :: A wrapper around FUSE that presents paths instead of inodes and dispatches
-//                    I/O operations to multiple threads.
+// FuseMT :: A wrapper around FUSE that presents paths instead of inodes and dispatches I/O
+//           operations to multiple threads.
 //
 // Copyright (c) 2016 by William R. Fraser
 //
@@ -12,7 +12,7 @@ use libc;
 use threadpool::ThreadPool;
 use time::Timespec;
 
-use super::inode_table::*;
+use inode_table::*;
 
 pub struct RequestInfo {
     pub unique: u64,
@@ -49,7 +49,7 @@ pub type ResultReaddir = Result<Vec<DirectoryEntry>, libc::c_int>;
 pub type ResultData = Result<Vec<u8>, libc::c_int>;
 pub type ResultWrite = Result<u32, libc::c_int>;
 
-pub trait PathFilesystem {
+pub trait FilesystemMT {
     fn init(&self, _req: RequestInfo) -> ResultEmpty {
         Err(0)
     }
@@ -168,21 +168,21 @@ pub trait PathFilesystem {
     // bmap
 }
 
-pub struct InodeTranslator<T> {
+pub struct FuseMT<T> {
     target: Arc<T>,
     inodes: InodeTable,
     threads: ThreadPool,
 }
 
-impl<T: PathFilesystem + Sync + Send + 'static> InodeTranslator<T> {
-    pub fn new(target_fs: T, num_threads: usize) -> InodeTranslator<T> {
-        let mut translator = InodeTranslator {
+impl<T: FilesystemMT + Sync + Send + 'static> FuseMT<T> {
+    pub fn new(target_fs: T, num_threads: usize) -> FuseMT<T> {
+        let mut adaptor = FuseMT {
             target: Arc::new(target_fs),
             inodes: InodeTable::new(),
             threads: ThreadPool::new(num_threads),
         };
-        translator.inodes.add(Arc::new(PathBuf::from("/")));
-        translator
+        adaptor.inodes.add(Arc::new(PathBuf::from("/")));
+        adaptor
     }
 }
 
@@ -197,7 +197,7 @@ macro_rules! get_path {
     }
 }
 
-impl<T: PathFilesystem + Sync + Send + 'static> Filesystem for InodeTranslator<T> {
+impl<T: FilesystemMT + Sync + Send + 'static> Filesystem for FuseMT<T> {
     fn init(&mut self, req: &Request) -> Result<(), libc::c_int> {
         debug!("init");
         self.target.init(req.info())

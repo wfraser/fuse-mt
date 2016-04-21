@@ -1,0 +1,130 @@
+// libc_extras :: Functions missing from the libc crate and wrappers for better cross-platform
+//                compatibility.
+//
+// Copyright (c) 2016 by William R. Fraser
+//
+
+pub mod libc {
+    pub use ::libc::*;
+
+    // stuff missing from the libc crate.
+    extern "system" {
+        // Specified by POSIX.1-2008; not sure why this is missing.
+        pub fn fchown(fd: c_int, uid: uid_t, gid: gid_t) -> c_int;
+
+        // On Mac OS X, off_t is always 64 bits.
+        // https://developer.apple.com/library/mac/documentation/Darwin/Conceptual/64bitPorting/transition/transition.html
+        #[cfg(target_os = "macos")]
+        pub fn truncate(path: *const c_char, size: off_t) -> c_int;
+
+        // On Linux, off_t is architecture-dependent, and this is provided for 32-bit systems:
+        #[cfg(target_os = "linux")]
+        pub fn truncate64(path: *const c_char, size: off64_t) -> c_int;
+
+        #[cfg(target_os = "macos")]
+        pub fn lutimes(path: *const c_char, times: *const timeval) -> c_int;
+    }
+
+    #[cfg(target_os = "macos")]
+    pub fn truncate64(path: *const c_char, size: off_t) -> c_int {
+        truncate(path, size)
+    }
+
+    #[cfg(target_os = "macos")]
+    fn timespec_to_timeval(timespec: &timespec) -> timeval {
+        timeval {
+            tv_sec: timespec.tv_sec,
+            tv_usec: timespec.tv_nsec * 1000,
+        }
+    }
+
+    pub const UTIME_OMIT: i64 = ((11 << 30) - 21);
+
+    // Mac OS X does not support futimens; map it to futimes with lower precision.
+    #[cfg(target_os = "macos")]
+    pub fn futimens(fd: c_int, times: *const timespec) -> c_int {
+        unsafe {
+            let mut times_osx = [timespec_to_timeval(&*times),
+                                 timespec_to_timeval(&*times.offset(1))];
+
+            let mut stat: Option<stat64> = None;
+
+            if (*times).tv_nsec == UTIME_OMIT {
+                // atime is unspecified
+
+                stat = match libc_wrappers::fstat(fd as u64) {
+                    Ok(s) => Some(s),
+                    Err(e) => return e,
+                };
+
+                times_osx[0].tv_sec = stat.unwrap().st_atime;
+                times_osx[0].tv_usec = stat.unwrap().st_atime_nsec * 1000;
+            }
+
+            if (*times.offset(1)).tv_nsec == UTIME_OMIT {
+                // mtime is unspecified
+
+                if stat.is_none() {
+                    stat = match libc_wrappers::fstat(fd as u64) {
+                        Ok(s) => Some(s),
+                        Err(e) => return e,
+                    };
+                }
+
+                times_osx[1].tv_sec = stat.unwrap().st_mtime;
+                times_osx[1].tv_usec = stat.unwrap().st_mtime_nsec * 1000;
+            }
+
+            futimes(fd, &times_osx as *const timeval)
+        }
+    }
+
+    // Mac OS X does not support utimensat; map it to lutimes with lower precision.
+    // The relative path feature of utimensat is not supported by this workaround.
+    #[cfg(target_os = "macos")]
+    pub fn utimensat(_dirfd_ignored: c_int, path: *const c_char, times: *const timespec) -> c_int {
+        use super::super::super::libc_wrappers;
+        unsafe {
+            assert_eq!(*path, b'/' as c_char); // relative paths are not supported here!
+            let mut times_osx = [timespec_to_timeval(&*times),
+                                 timespec_to_timeval(&*times.offset(1))];
+
+            let mut stat: Option<stat64> = None;
+            fn stat_if_needed(path: *const c_char, stat: &mut Option<stat64>) -> Result<(), c_int> {
+                use std::ffi::{CStr, OsString};
+                use std::os::unix::ffi::OsStringExt;
+                if stat.is_none() {
+                    let path_c = unsafe { CStr::from_ptr(path) } .to_owned();
+                    let path_os = OsString::from_vec(path_c.into_bytes());
+                    *stat = Some(try!(libc_wrappers::lstat(path_os)));
+                }
+                Ok(())
+            }
+
+            if (*times).tv_nsec == UTIME_OMIT {
+                // atime is unspecified
+
+                if let Err(e) = stat_if_needed(path, &mut stat) {
+                    return e;
+                }
+
+                times_osx[0].tv_sec = stat.unwrap().st_atime;
+                times_osx[0].tv_usec = stat.unwrap().st_atime_nsec * 1000;
+            }
+
+            if (*times.offset(1)).tv_nsec == UTIME_OMIT {
+                // mtime is unspecified
+
+                if stat.is_none() {
+                    if let Err(e) = stat_if_needed(path, &mut stat) {
+                        return e;
+                    }
+                }
+                times_osx[1].tv_sec = stat.unwrap().st_mtime;
+                times_osx[1].tv_usec = stat.unwrap().st_mtime_nsec * 1000;
+            }
+
+            lutimes(path, &times_osx as *const timeval)
+        }
+    }
+}

@@ -1,4 +1,4 @@
-// Main Entry Point :: FUSE-MT test program.
+// Main Entry Point :: A fuse_mt test program.
 //
 // Copyright (c) 2016 by William R. Fraser
 //
@@ -6,18 +6,16 @@
 use std::env;
 use std::ffi::{OsStr, OsString};
 
-extern crate daemonize;
 extern crate fuse;
 extern crate libc;
-extern crate syslog;
-extern crate threadpool;
 extern crate time;
 
 #[macro_use]
 extern crate log;
 
-mod fs;
-mod libc_wrappers;
+extern crate fuse_mt;
+
+mod example;
 
 struct ConsoleLogger;
 
@@ -45,13 +43,11 @@ fn main() {
         ::std::process::exit(-1);
     }
 
-    let filesystem = fs::Passthrough {
+    let filesystem = example::PassthroughFS {
         target: args[1].clone(),
     };
 
-    let translator = fs::InodeTranslator::new(filesystem, 1);
-
     let fuse_args: Vec<&OsStr> = vec![&OsStr::new("-o"), &OsStr::new("auto_unmount")];
 
-    fuse::mount(translator, &args[2], &fuse_args);
+    fuse::mount(fuse_mt::FuseMT::new(filesystem, 1), &args[2], &fuse_args);
 }
