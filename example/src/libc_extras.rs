@@ -38,7 +38,7 @@ pub mod libc {
         }
     }
 
-    pub const UTIME_OMIT: i64 = ((11 << 30) - 21);
+    pub const UTIME_OMIT: time_t = ((11 << 30) - 21);
 
     // Mac OS X does not support futimens; map it to futimes with lower precision.
     #[cfg(target_os = "macos")]

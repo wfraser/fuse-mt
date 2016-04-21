@@ -361,8 +361,8 @@ impl FilesystemMT for PassthroughFS {
         fn timespec_to_libc(time: Option<Timespec>) -> libc::timespec {
             if let Some(time) = time {
                 libc::timespec {
-                    tv_sec: time.sec,
-                    tv_nsec: time.nsec as i64,
+                    tv_sec: time.sec as libc::time_t,
+                    tv_nsec: time.nsec as libc::time_t,
                 }
             } else {
                 libc::timespec {
