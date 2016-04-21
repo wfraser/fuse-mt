@@ -1,5 +1,5 @@
 [package]
-name = "fuse_mt"
+name = "passthrufs"
 version = "0.1.0"
 authors = ["William R. Fraser <wfraser@codewise.org>"]
 
@@ -7,5 +7,6 @@ authors = ["William R. Fraser <wfraser@codewise.org>"]
 fuse = "0.2"
 libc = "0.2"
 log = "0.3"
-threadpool = "1.0"
 time = "0.1"
+fuse_mt = { path = ".." }
+

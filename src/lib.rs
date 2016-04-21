@@ -1,6 +1,5 @@
 extern crate fuse;
 extern crate libc;
-extern crate syslog;
 extern crate threadpool;
 extern crate time;
 

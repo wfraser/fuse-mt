@@ -15,7 +15,9 @@ extern crate log;
 
 extern crate fuse_mt;
 
-mod example;
+mod libc_extras;
+mod libc_wrappers;
+mod passthrough;
 
 struct ConsoleLogger;
 
@@ -43,7 +45,7 @@ fn main() {
         ::std::process::exit(-1);
     }
 
-    let filesystem = example::PassthroughFS {
+    let filesystem = passthrough::PassthroughFS {
         target: args[1].clone(),
     };
 
