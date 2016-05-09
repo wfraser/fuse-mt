@@ -41,6 +41,17 @@ pub struct DirectoryEntry {
     pub kind: FileType,
 }
 
+pub struct Statfs {
+    pub blocks: u64,
+    pub bfree: u64,
+    pub bavail: u64,
+    pub files: u64,
+    pub ffree: u64,
+    pub bsize: u32,
+    pub namelen: u32,
+    pub frsize: u32,
+}
+
 pub type ResultEmpty = Result<(), libc::c_int>;
 pub type ResultGetattr = Result<(Timespec, FileAttr), libc::c_int>;
 pub type ResultLookup = Result<(Timespec, FileAttr, u64), libc::c_int>;
@@ -48,6 +59,7 @@ pub type ResultOpen = Result<(u64, u32), libc::c_int>;
 pub type ResultReaddir = Result<Vec<DirectoryEntry>, libc::c_int>;
 pub type ResultData = Result<Vec<u8>, libc::c_int>;
 pub type ResultWrite = Result<u32, libc::c_int>;
+pub type ResultStatfs = Result<Statfs, libc::c_int>;
 
 pub trait FilesystemMT {
     fn init(&self, _req: RequestInfo) -> ResultEmpty {
@@ -148,6 +160,9 @@ pub trait FilesystemMT {
     // fsyncdir
 
     // statfs
+    fn statfs(&self, _req: RequestInfo, _path: &Path) -> ResultStatfs {
+        Err(libc::ENOSYS)
+    }
 
     // setxattr
 
@@ -470,7 +485,26 @@ impl<T: FilesystemMT + Sync + Send + 'static> Filesystem for FuseMT<T> {
 
     // fsyncdir
 
-    // statfs
+    fn statfs(&mut self, req: &Request, ino: u64, reply: ReplyStatfs) {
+        let path = if ino == 1 {
+            Arc::new(PathBuf::from("/"))
+        } else {
+            get_path!(self, ino, reply)
+        };
+
+        debug!("statfs: {:?}", path);
+        match self.target.statfs(req.info(), &path) {
+            Ok(statfs) => reply.statfs(statfs.blocks,
+                                       statfs.bfree,
+                                       statfs.bavail,
+                                       statfs.files,
+                                       statfs.ffree,
+                                       statfs.bsize,
+                                       statfs.namelen,
+                                       statfs.frsize),
+            Err(e) => reply.error(e),
+        }
+    }
 
     // setxattr
 

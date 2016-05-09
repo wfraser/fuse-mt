@@ -402,6 +402,34 @@ impl FilesystemMT for PassthroughFS {
             Err(e) => Err(e.raw_os_error().unwrap()),
         }
     }
+
+    fn statfs(&self, _req: RequestInfo, path: &Path) -> ResultStatfs {
+        debug!("statfs: {:?}", path);
+
+        let real = self.real_path(path);
+        let mut buf: libc::statfs = unsafe { ::std::mem::zeroed() };
+        let result = unsafe {
+            let path_c = CString::from_vec_unchecked(real.into_vec());
+            libc::statfs(path_c.as_ptr(), &mut buf)
+        };
+
+        if -1 == result {
+            let e = io::Error::last_os_error();
+            error!("statfs({:?}): {}", path, e);
+            Err(e.raw_os_error().unwrap())
+        } else {
+            Ok(Statfs {
+                blocks:     buf.f_blocks,
+                bfree:      buf.f_bfree,
+                bavail:     buf.f_bavail,
+                files:      buf.f_files,
+                ffree:      buf.f_ffree,
+                bsize:      buf.f_bsize as u32,
+                namelen:    buf.f_namelen as u32,
+                frsize:     buf.f_frsize as u32,
+            })
+        }
+    }
 }
 
 /// A file that is not closed upon leaving scope.
