@@ -430,6 +430,20 @@ impl FilesystemMT for PassthroughFS {
             })
         }
     }
+
+    fn fsyncdir(&self, _req: RequestInfo, path: &Path, fh: u64, datasync: bool) -> ResultEmpty {
+        debug!("fsyncdir: {:?} (datasync = {:?})", path, datasync);
+
+        // TODO: what does datasync mean with regards to a directory handle?
+        let result = unsafe { libc::fsync(fh as libc::c_int) };
+        if -1 == result {
+            let e = io::Error::last_os_error();
+            error!("fsyncdir({:?}): {}", path, e);
+            Err(e.raw_os_error().unwrap())
+        } else {
+            Ok(())
+        }
+    }
 }
 
 /// A file that is not closed upon leaving scope.

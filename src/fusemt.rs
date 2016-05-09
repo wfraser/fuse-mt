@@ -157,9 +157,10 @@ pub trait FilesystemMT {
         Err(libc::ENOSYS)
     }
 
-    // fsyncdir
+    fn fsyncdir(&self, _req: RequestInfo, _path: &Path, _fh: u64, _datasync: bool) -> ResultEmpty {
+        Err(libc::ENOSYS)
+    }
 
-    // statfs
     fn statfs(&self, _req: RequestInfo, _path: &Path) -> ResultStatfs {
         Err(libc::ENOSYS)
     }
@@ -483,7 +484,14 @@ impl<T: FilesystemMT + Sync + Send + 'static> Filesystem for FuseMT<T> {
         }
     }
 
-    // fsyncdir
+    fn fsyncdir(&mut self, req: &Request, ino: u64, fh: u64, datasync: bool, reply: ReplyEmpty) {
+        let path = get_path!(self, ino, reply);
+        debug!("fsyncdir: {:?} (datasync: {:?})", path, datasync);
+        match self.target.fsyncdir(req.info(), &path, fh, datasync) {
+            Ok(()) => reply.ok(),
+            Err(e) => reply.error(e),
+        }
+    }
 
     fn statfs(&mut self, req: &Request, ino: u64, reply: ReplyStatfs) {
         let path = if ino == 1 {
