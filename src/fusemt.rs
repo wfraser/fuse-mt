@@ -115,7 +115,9 @@ pub trait FilesystemMT {
         Err(libc::ENOSYS)
     }
 
-    // unlink
+    fn unlink(&self, _req: RequestInfo, _parent: &Path, _name: &Path) -> ResultEmpty {
+        Err(libc::ENOSYS)
+    }
 
     // rmdir
 
@@ -354,7 +356,14 @@ impl<T: FilesystemMT + Sync + Send + 'static> Filesystem for FuseMT<T> {
         }
     }
 
-    // unlink
+    fn unlink(&mut self, req: &Request, parent: u64, name: &Path, reply: ReplyEmpty) {
+        let parent_path = get_path!(self, parent, reply);
+        debug!("unlink {:?}/{:?}", parent_path, name);
+        match self.target.unlink(req.info(), &parent_path, name) {
+            Ok(()) => reply.ok(),
+            Err(e) => reply.error(e),
+        }
+    }
 
     // rmdir
 

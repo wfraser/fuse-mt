@@ -6,7 +6,7 @@
 //
 
 use std::ffi::{CStr, CString, OsStr, OsString};
-use std::fs::File;
+use std::fs::{self, File};
 use std::io::{self, Read, Write, Seek, SeekFrom};
 use std::os::unix::ffi::{OsStrExt, OsStringExt};
 use std::os::unix::io::{FromRawFd, IntoRawFd};
@@ -488,6 +488,17 @@ impl FilesystemMT for PassthroughFS {
                 },
             }
         }
+    }
+
+    fn unlink(&self, _req: RequestInfo, parent_path: &Path, name: &Path) -> ResultEmpty {
+        debug!("unlink {:?}/{:?}", parent_path, name);
+
+        let real = PathBuf::from(self.real_path(parent_path)).join(name);
+        fs::remove_file(&real)
+            .map_err(|ioerr| {
+                error!("unlink({:?}): {}", real, ioerr);
+                ioerr.raw_os_error().unwrap()
+            })
     }
 }
 
