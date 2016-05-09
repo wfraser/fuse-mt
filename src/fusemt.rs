@@ -111,7 +111,9 @@ pub trait FilesystemMT {
         Err(libc::ENOSYS)
     }
 
-    // mkdir
+    fn mkdir(&self, _req: RequestInfo, _parent: &Path, _name: &Path, _mode: u32) -> ResultEntry {
+        Err(libc::ENOSYS)
+    }
 
     // unlink
 
@@ -339,7 +341,18 @@ impl<T: FilesystemMT + Sync + Send + 'static> Filesystem for FuseMT<T> {
         }
     }
 
-    // mkdir
+    fn mkdir(&mut self, req: &Request, parent: u64, name: &Path, mode: u32, reply: ReplyEntry) {
+        let parent_path = get_path!(self, parent, reply);
+        debug!("mkdir {:?}/{:?}", parent_path, name);
+        match self.target.mkdir(req.info(), &parent_path, name, mode) {
+            Ok((ref ttl, ref mut attr, generation)) => {
+                let ino = self.inodes.add_or_get(Arc::new(parent_path.join(name)));
+                attr.ino = ino;
+                reply.entry(ttl, attr, generation)
+            },
+            Err(e) => reply.error(e),
+        }
+    }
 
     // unlink
 

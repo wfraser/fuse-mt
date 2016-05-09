@@ -446,7 +446,7 @@ impl FilesystemMT for PassthroughFS {
     }
 
     fn mknod(&self, _req: RequestInfo, parent_path: &Path, name: &Path, mode: u32, rdev: u32) -> ResultEntry {
-        debug!("mknod: {:?}/{:?} (mode={}, rdev={})", parent_path, name, mode, rdev);
+        debug!("mknod: {:?}/{:?} (mode={:o}, rdev={})", parent_path, name, mode, rdev);
 
         let real = PathBuf::from(self.real_path(parent_path)).join(name);
         let result = unsafe {
@@ -462,6 +462,30 @@ impl FilesystemMT for PassthroughFS {
             match libc_wrappers::lstat(real.into_os_string()) {
                 Ok(attr) => Ok((TTL, stat_to_fuse(attr), 0)),
                 Err(e) => Err(e),   // if this happens, yikes
+            }
+        }
+    }
+
+    fn mkdir(&self, _req: RequestInfo, parent_path: &Path, name: &Path, mode: u32) -> ResultEntry {
+        debug!("mkdir {:?}/{:?} (mode={:o})", parent_path, name, mode);
+
+        let real = PathBuf::from(self.real_path(parent_path)).join(name);
+        let result = unsafe {
+            let path_c = CString::from_vec_unchecked(real.as_os_str().as_bytes().to_vec());
+            libc::mkdir(path_c.as_ptr(), mode)
+        };
+
+        if -1 == result {
+            let e = io::Error::last_os_error();
+            error!("mkdir({:?}, {:o}): {}", real, mode, e);
+            Err(e.raw_os_error().unwrap())
+        } else {
+            match libc_wrappers::lstat(real.clone().into_os_string()) {
+                Ok(attr) => Ok((TTL, stat_to_fuse(attr), 0)),
+                Err(e) => {
+                    error!("lstat after mkdir({:?}, {:o}): {}", real, mode, e);
+                    Err(e)   // if this happens, yikes
+                },
             }
         }
     }
