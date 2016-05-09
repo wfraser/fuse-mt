@@ -54,7 +54,7 @@ pub struct Statfs {
 
 pub type ResultEmpty = Result<(), libc::c_int>;
 pub type ResultGetattr = Result<(Timespec, FileAttr), libc::c_int>;
-pub type ResultLookup = Result<(Timespec, FileAttr, u64), libc::c_int>;
+pub type ResultEntry = Result<(Timespec, FileAttr, u64), libc::c_int>;
 pub type ResultOpen = Result<(u64, u32), libc::c_int>;
 pub type ResultReaddir = Result<Vec<DirectoryEntry>, libc::c_int>;
 pub type ResultData = Result<Vec<u8>, libc::c_int>;
@@ -70,7 +70,7 @@ pub trait FilesystemMT {
         // Nothing.
     }
 
-    fn lookup(&self, _req: RequestInfo, _parent: &Path, _name: &Path) -> ResultLookup {
+    fn lookup(&self, _req: RequestInfo, _parent: &Path, _name: &Path) -> ResultEntry {
         Err(libc::ENOSYS)
     }
 
@@ -107,7 +107,9 @@ pub trait FilesystemMT {
         Err(libc::ENOSYS)
     }
 
-    // mknod
+    fn mknod(&self, _req: RequestInfo, _parent: &Path, _name: &Path, _mode: u32, _rdev: u32) -> ResultEntry {
+        Err(libc::ENOSYS)
+    }
 
     // mkdir
 
@@ -328,7 +330,14 @@ impl<T: FilesystemMT + Sync + Send + 'static> Filesystem for FuseMT<T> {
         }
     }
 
-    // mknod
+    fn mknod(&mut self, req: &Request, parent: u64, name: &Path, mode: u32, rdev: u32, reply: ReplyEntry) {
+        let parent_path = get_path!(self, parent, reply);
+        debug!("mknod {:?}/{:?}", parent_path, name);
+        match self.target.mknod(req.info(), &parent_path, name, mode, rdev) {
+            Ok((ref ttl, ref attr, generation)) => reply.entry(ttl, attr, generation),
+            Err(e) => reply.error(e),
+        }
+    }
 
     // mkdir
 

@@ -114,7 +114,7 @@ impl FilesystemMT for PassthroughFS {
         }
     }
 
-    fn lookup(&self, _req: RequestInfo, parent: &Path, name: &Path) -> ResultLookup {
+    fn lookup(&self, _req: RequestInfo, parent: &Path, name: &Path) -> ResultEntry {
         debug!("lookup: {:?}/{:?}", parent, name);
 
         let path = PathBuf::from(parent).join(name);
@@ -442,6 +442,27 @@ impl FilesystemMT for PassthroughFS {
             Err(e.raw_os_error().unwrap())
         } else {
             Ok(())
+        }
+    }
+
+    fn mknod(&self, _req: RequestInfo, parent_path: &Path, name: &Path, mode: u32, rdev: u32) -> ResultEntry {
+        debug!("mknod: {:?}/{:?} (mode={}, rdev={})", parent_path, name, mode, rdev);
+
+        let real = PathBuf::from(self.real_path(parent_path)).join(name);
+        let result = unsafe {
+            let path_c = CString::from_vec_unchecked(real.as_os_str().as_bytes().to_vec());
+            libc::mknod(path_c.as_ptr(), mode, rdev as u64)
+        };
+
+        if -1 == result {
+            let e = io::Error::last_os_error();
+            error!("mknod({:?}, {}, {}): {}", real, mode, rdev, e);
+            Err(e.raw_os_error().unwrap())
+        } else {
+            match libc_wrappers::lstat(real.into_os_string()) {
+                Ok(attr) => Ok((TTL, stat_to_fuse(attr), 0)),
+                Err(e) => Err(e),   // if this happens, yikes
+            }
         }
     }
 }
