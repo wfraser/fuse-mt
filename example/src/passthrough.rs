@@ -380,7 +380,7 @@ impl FilesystemMT for PassthroughFS {
             let real = self.real_path(path);
             unsafe {
                 let path_c = CString::from_vec_unchecked(real.into_vec());
-                libc::utimensat(0, path_c.as_ptr(), &times as *const libc::timespec, 0)
+                libc::utimensat(libc::AT_FDCWD, path_c.as_ptr(), &times as *const libc::timespec, libc::AT_SYMLINK_NOFOLLOW)
             }
         };
 
