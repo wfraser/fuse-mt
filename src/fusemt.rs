@@ -127,7 +127,9 @@ pub trait FilesystemMT {
         Err(libc::ENOSYS)
     }
 
-    // rename
+    fn rename(&self, _req: RequestInfo, _parent: &Path, _name: &Path, _newparent: &Path, _newname: &Path) -> ResultEmpty {
+        Err(libc::ENOSYS)
+    }
 
     // link
 
@@ -391,7 +393,18 @@ impl<T: FilesystemMT + Sync + Send + 'static> Filesystem for FuseMT<T> {
         }
     }
 
-    // rename
+    fn rename(&mut self, req: &Request, parent: u64, name: &Path, newparent: u64, newname: &Path, reply: ReplyEmpty) {
+        let parent_path = get_path!(self, parent, reply);
+        let newparent_path = get_path!(self, newparent, reply);
+        debug!("rename {:?}/{:?} -> {:?}/{:?}", parent_path, name, newparent_path, newname);
+        match self.target.rename(req.info(), &parent_path, name, &newparent_path, newname) {
+            Ok(()) => {
+                self.inodes.rename(&parent_path.join(name), Arc::new(newparent_path.join(newname)));
+                reply.ok()
+            },
+            Err(e) => reply.error(e),
+        }
+    }
 
     // link
 

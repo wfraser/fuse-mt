@@ -64,6 +64,14 @@ impl InodeTable {
             None        => None
         }
     }
+
+    pub fn rename(&mut self, oldpath: &Path, newpath: Arc<PathBuf>) {
+        let ino = self.path_to_inode.remove(Pathish::new(oldpath)).unwrap();
+        self.inode_to_path.remove(&ino);
+
+        self.path_to_inode.insert(newpath.clone(), ino).unwrap(); // this can replace a path with a new inode
+        self.inode_to_path.insert(ino, newpath);
+    }
 }
 
 // Facilitates comparing Rc<PathBuf> and &Path

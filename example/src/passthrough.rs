@@ -532,6 +532,18 @@ impl FilesystemMT for PassthroughFS {
             }
         }
     }
+
+    fn rename(&self, _req: RequestInfo, parent_path: &Path, name: &Path, newparent_path: &Path, newname: &Path) -> ResultEmpty {
+        debug!("rename: {:?}/{:?} -> {:?}/{:?}", parent_path, name, newparent_path, newname);
+
+        let real = PathBuf::from(self.real_path(parent_path)).join(name);
+        let newreal = PathBuf::from(self.real_path(newparent_path)).join(newname);
+        fs::rename(&real, &newreal)
+            .map_err(|ioerr| {
+                error!("rename({:?}, {:?}): {}", real, newreal, ioerr);
+                ioerr.raw_os_error().unwrap()
+            })
+    }
 }
 
 /// A file that is not closed upon leaving scope.
