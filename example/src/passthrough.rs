@@ -502,7 +502,7 @@ impl FilesystemMT for PassthroughFS {
     }
 
     fn rmdir(&self, _req: RequestInfo, parent_path: &Path, name: &Path) -> ResultEmpty {
-        debug!("rmdir {:?}/{:?}", parent_path, name);
+        debug!("rmdir: {:?}/{:?}", parent_path, name);
 
         let real = PathBuf::from(self.real_path(parent_path)).join(name);
         fs::remove_dir(&real)
@@ -510,6 +510,27 @@ impl FilesystemMT for PassthroughFS {
                 error!("rmdir({:?}): {}", real, ioerr);
                 ioerr.raw_os_error().unwrap()
             })
+    }
+
+    fn symlink(&self, _req: RequestInfo, parent_path: &Path, name: &Path, target: &Path) -> ResultEntry {
+        debug!("symlink: {:?}/{:?} -> {:?}", parent_path, name, target);
+
+        let real = PathBuf::from(self.real_path(parent_path)).join(name);
+        match ::std::os::unix::fs::symlink(target, &real) {
+            Ok(()) => {
+                match libc_wrappers::lstat(real.clone().into_os_string()) {
+                    Ok(attr) => Ok((TTL, stat_to_fuse(attr), 0)),
+                    Err(e) => {
+                        error!("lstat after symlink({:?}, {:?}): {}", real, target, e);
+                        Err(e)
+                    },
+                }
+            },
+            Err(e) => {
+                error!("symlink({:?}, {:?}): {}", real, target, e);
+                Err(e.raw_os_error().unwrap())
+            }
+        }
     }
 }
 

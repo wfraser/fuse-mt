@@ -123,7 +123,9 @@ pub trait FilesystemMT {
         Err(libc::ENOSYS)
     }
 
-    // symlink
+    fn symlink(&self, _req: RequestInfo, _parent: &Path, _name: &Path, _target: &Path) -> ResultEntry {
+        Err(libc::ENOSYS)
+    }
 
     // rename
 
@@ -376,7 +378,18 @@ impl<T: FilesystemMT + Sync + Send + 'static> Filesystem for FuseMT<T> {
         }
     }
 
-    // symlink
+    fn symlink(&mut self, req: &Request, parent: u64, name: &Path, link: &Path, reply: ReplyEntry) {
+        let parent_path = get_path!(self, parent, reply);
+        debug!("symlink {:?}/{:?} -> {:?}", parent_path, name, link);
+        match self.target.symlink(req.info(), &parent_path, name, link) {
+            Ok((ref ttl, ref mut attr, generation)) => {
+                let ino = self.inodes.add_or_get(Arc::new(parent_path.join(name)));
+                attr.ino = ino;
+                reply.entry(ttl, attr, generation)
+            },
+            Err(e) => reply.error(e),
+        }
+    }
 
     // rename
 
