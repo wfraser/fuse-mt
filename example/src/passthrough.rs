@@ -500,6 +500,17 @@ impl FilesystemMT for PassthroughFS {
                 ioerr.raw_os_error().unwrap()
             })
     }
+
+    fn rmdir(&self, _req: RequestInfo, parent_path: &Path, name: &Path) -> ResultEmpty {
+        debug!("rmdir {:?}/{:?}", parent_path, name);
+
+        let real = PathBuf::from(self.real_path(parent_path)).join(name);
+        fs::remove_dir(&real)
+            .map_err(|ioerr| {
+                error!("rmdir({:?}): {}", real, ioerr);
+                ioerr.raw_os_error().unwrap()
+            })
+    }
 }
 
 /// A file that is not closed upon leaving scope.

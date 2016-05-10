@@ -119,7 +119,9 @@ pub trait FilesystemMT {
         Err(libc::ENOSYS)
     }
 
-    // rmdir
+    fn rmdir(&self, _req: RequestInfo, _parent: &Path, _name: &Path) -> ResultEmpty {
+        Err(libc::ENOSYS)
+    }
 
     // symlink
 
@@ -365,7 +367,14 @@ impl<T: FilesystemMT + Sync + Send + 'static> Filesystem for FuseMT<T> {
         }
     }
 
-    // rmdir
+    fn rmdir(&mut self, req: &Request, parent: u64, name: &Path, reply: ReplyEmpty) {
+        let parent_path = get_path!(self, parent, reply);
+        debug!("rmdir {:?}/{:?}", parent_path, name);
+        match self.target.rmdir(req.info(), &parent_path, name) {
+            Ok(()) => reply.ok(),
+            Err(e) => reply.error(e),
+        }
+    }
 
     // symlink
 
