@@ -131,7 +131,9 @@ pub trait FilesystemMT {
         Err(libc::ENOSYS)
     }
 
-    // link
+    fn link(&self, _req: RequestInfo, _path: &Path, _newparent: &Path, _newname: &Path) -> ResultEntry {
+        Err(libc::ENOSYS)
+    }
 
     fn open(&self, _req: RequestInfo, _path: &Path, _flags: u32) -> ResultOpen {
         Err(libc::ENOSYS)
@@ -342,7 +344,7 @@ impl<T: FilesystemMT + Sync + Send + 'static> Filesystem for FuseMT<T> {
 
     fn mknod(&mut self, req: &Request, parent: u64, name: &Path, mode: u32, rdev: u32, reply: ReplyEntry) {
         let parent_path = get_path!(self, parent, reply);
-        debug!("mknod {:?}/{:?}", parent_path, name);
+        debug!("mknod: {:?}/{:?}", parent_path, name);
         match self.target.mknod(req.info(), &parent_path, name, mode, rdev) {
             Ok((ref ttl, ref attr, generation)) => reply.entry(ttl, attr, generation),
             Err(e) => reply.error(e),
@@ -351,10 +353,10 @@ impl<T: FilesystemMT + Sync + Send + 'static> Filesystem for FuseMT<T> {
 
     fn mkdir(&mut self, req: &Request, parent: u64, name: &Path, mode: u32, reply: ReplyEntry) {
         let parent_path = get_path!(self, parent, reply);
-        debug!("mkdir {:?}/{:?}", parent_path, name);
+        debug!("mkdir: {:?}/{:?}", parent_path, name);
         match self.target.mkdir(req.info(), &parent_path, name, mode) {
             Ok((ref ttl, ref mut attr, generation)) => {
-                let ino = self.inodes.add_or_get(Arc::new(parent_path.join(name)));
+                let ino = self.inodes.add(Arc::new(parent_path.join(name)));
                 attr.ino = ino;
                 reply.entry(ttl, attr, generation)
             },
@@ -364,7 +366,7 @@ impl<T: FilesystemMT + Sync + Send + 'static> Filesystem for FuseMT<T> {
 
     fn unlink(&mut self, req: &Request, parent: u64, name: &Path, reply: ReplyEmpty) {
         let parent_path = get_path!(self, parent, reply);
-        debug!("unlink {:?}/{:?}", parent_path, name);
+        debug!("unlink: {:?}/{:?}", parent_path, name);
         match self.target.unlink(req.info(), &parent_path, name) {
             Ok(()) => reply.ok(),
             Err(e) => reply.error(e),
@@ -373,7 +375,7 @@ impl<T: FilesystemMT + Sync + Send + 'static> Filesystem for FuseMT<T> {
 
     fn rmdir(&mut self, req: &Request, parent: u64, name: &Path, reply: ReplyEmpty) {
         let parent_path = get_path!(self, parent, reply);
-        debug!("rmdir {:?}/{:?}", parent_path, name);
+        debug!("rmdir: {:?}/{:?}", parent_path, name);
         match self.target.rmdir(req.info(), &parent_path, name) {
             Ok(()) => reply.ok(),
             Err(e) => reply.error(e),
@@ -382,10 +384,10 @@ impl<T: FilesystemMT + Sync + Send + 'static> Filesystem for FuseMT<T> {
 
     fn symlink(&mut self, req: &Request, parent: u64, name: &Path, link: &Path, reply: ReplyEntry) {
         let parent_path = get_path!(self, parent, reply);
-        debug!("symlink {:?}/{:?} -> {:?}", parent_path, name, link);
+        debug!("symlink: {:?}/{:?} -> {:?}", parent_path, name, link);
         match self.target.symlink(req.info(), &parent_path, name, link) {
             Ok((ref ttl, ref mut attr, generation)) => {
-                let ino = self.inodes.add_or_get(Arc::new(parent_path.join(name)));
+                let ino = self.inodes.add(Arc::new(parent_path.join(name)));
                 attr.ino = ino;
                 reply.entry(ttl, attr, generation)
             },
@@ -396,7 +398,7 @@ impl<T: FilesystemMT + Sync + Send + 'static> Filesystem for FuseMT<T> {
     fn rename(&mut self, req: &Request, parent: u64, name: &Path, newparent: u64, newname: &Path, reply: ReplyEmpty) {
         let parent_path = get_path!(self, parent, reply);
         let newparent_path = get_path!(self, newparent, reply);
-        debug!("rename {:?}/{:?} -> {:?}/{:?}", parent_path, name, newparent_path, newname);
+        debug!("rename: {:?}/{:?} -> {:?}/{:?}", parent_path, name, newparent_path, newname);
         match self.target.rename(req.info(), &parent_path, name, &newparent_path, newname) {
             Ok(()) => {
                 self.inodes.rename(&parent_path.join(name), Arc::new(newparent_path.join(newname)));
@@ -406,7 +408,21 @@ impl<T: FilesystemMT + Sync + Send + 'static> Filesystem for FuseMT<T> {
         }
     }
 
-    // link
+    fn link(&mut self, req: &Request, ino: u64, newparent: u64, newname: &Path, reply: ReplyEntry) {
+        let path = get_path!(self, ino, reply);
+        let newparent_path = get_path!(self, newparent, reply);
+        debug!("link: {:?} -> {:?}/{:?}", path, newparent_path, newname);
+        match self.target.link(req.info(), &path, &newparent_path, newname) {
+            Ok((ref ttl, ref mut attr, generation)) => {
+                // NOTE: this results in the new link having a different inode from the original.
+                // This is needed because our inode table is a 1:1 map between paths and inodes.
+                let new_ino = self.inodes.add(Arc::new(newparent_path.join(newname)));
+                attr.ino = new_ino;
+                reply.entry(ttl, attr, generation);
+            },
+            Err(e) => reply.error(e),
+        }
+    }
 
     fn open(&mut self, req: &Request, ino: u64, flags: u32, reply: ReplyOpen) {
         let path = get_path!(self, ino, reply);

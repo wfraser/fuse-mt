@@ -544,6 +544,28 @@ impl FilesystemMT for PassthroughFS {
                 ioerr.raw_os_error().unwrap()
             })
     }
+
+    fn link(&self, _req: RequestInfo, path: &Path, newparent: &Path, newname: &Path) -> ResultEntry {
+        debug!("link: {:?} -> {:?}/{:?}", path, newparent, newname);
+
+        let real = self.real_path(path);
+        let newreal = PathBuf::from(self.real_path(newparent)).join(newname);
+        match fs::hard_link(&real, &newreal) {
+            Ok(()) => {
+                match libc_wrappers::lstat(real.clone()) {
+                    Ok(attr) => Ok((TTL, stat_to_fuse(attr), 0)),
+                    Err(e) => {
+                        error!("lstat after link({:?}, {:?}): {}", real, newreal, e);
+                        Err(e)
+                    },
+                }
+            },
+            Err(e) => {
+                error!("link({:?}, {:?}): {}", real, newreal, e);
+                Err(e.raw_os_error().unwrap())
+            },
+        }
+    }
 }
 
 /// A file that is not closed upon leaving scope.
