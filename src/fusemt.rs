@@ -52,6 +52,14 @@ pub struct Statfs {
     pub frsize: u32,
 }
 
+pub struct CreatedEntry {
+    pub ttl: Timespec,
+    pub attr: FileAttr,
+    pub generation: u64,
+    pub fh: u64,
+    pub flags: u32,
+}
+
 pub type ResultEmpty = Result<(), libc::c_int>;
 pub type ResultGetattr = Result<(Timespec, FileAttr), libc::c_int>;
 pub type ResultEntry = Result<(Timespec, FileAttr, u64), libc::c_int>;
@@ -60,6 +68,7 @@ pub type ResultReaddir = Result<Vec<DirectoryEntry>, libc::c_int>;
 pub type ResultData = Result<Vec<u8>, libc::c_int>;
 pub type ResultWrite = Result<u32, libc::c_int>;
 pub type ResultStatfs = Result<Statfs, libc::c_int>;
+pub type ResultCreate = Result<CreatedEntry, libc::c_int>;
 
 pub trait FilesystemMT {
     fn init(&self, _req: RequestInfo) -> ResultEmpty {
@@ -189,7 +198,9 @@ pub trait FilesystemMT {
 
     // access
 
-    // create
+    fn create(&self, _req: RequestInfo, _parent: &Path, _name: &Path, _mode: u32, _flags: u32) -> ResultCreate {
+        Err(libc::ENOSYS)
+    }
 
     // getlk
 
@@ -606,7 +617,18 @@ impl<T: FilesystemMT + Sync + Send + 'static> Filesystem for FuseMT<T> {
 
     // access
 
-    // create
+    fn create(&mut self, req: &Request, parent: u64, name: &Path, mode: u32, flags: u32, reply: ReplyCreate) {
+        let parent_path = get_path!(self, parent, reply);
+        debug!("create: {:?}/{:?} (mode={:#o}, flags={:#x})", parent_path, name, mode, flags);
+        match self.target.create(req.info(), &parent_path, name, mode, flags) {
+            Ok(mut create) => {
+                let ino = self.inodes.add(Arc::new(parent_path.join(name)));
+                create.attr.ino = ino;
+                reply.created(&create.ttl, &create.attr, create.generation, create.fh, create.flags);
+            },
+            Err(e) => reply.error(e),
+        }
+    }
 
     // getlk
 

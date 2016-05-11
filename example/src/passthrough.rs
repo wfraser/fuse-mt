@@ -446,7 +446,7 @@ impl FilesystemMT for PassthroughFS {
     }
 
     fn mknod(&self, _req: RequestInfo, parent_path: &Path, name: &Path, mode: u32, rdev: u32) -> ResultEntry {
-        debug!("mknod: {:?}/{:?} (mode={:o}, rdev={})", parent_path, name, mode, rdev);
+        debug!("mknod: {:?}/{:?} (mode={:#o}, rdev={})", parent_path, name, mode, rdev);
 
         let real = PathBuf::from(self.real_path(parent_path)).join(name);
         let result = unsafe {
@@ -467,7 +467,7 @@ impl FilesystemMT for PassthroughFS {
     }
 
     fn mkdir(&self, _req: RequestInfo, parent_path: &Path, name: &Path, mode: u32) -> ResultEntry {
-        debug!("mkdir {:?}/{:?} (mode={:o})", parent_path, name, mode);
+        debug!("mkdir {:?}/{:?} (mode={:#o})", parent_path, name, mode);
 
         let real = PathBuf::from(self.real_path(parent_path)).join(name);
         let result = unsafe {
@@ -477,13 +477,13 @@ impl FilesystemMT for PassthroughFS {
 
         if -1 == result {
             let e = io::Error::last_os_error();
-            error!("mkdir({:?}, {:o}): {}", real, mode, e);
+            error!("mkdir({:?}, {:#o}): {}", real, mode, e);
             Err(e.raw_os_error().unwrap())
         } else {
             match libc_wrappers::lstat(real.clone().into_os_string()) {
                 Ok(attr) => Ok((TTL, stat_to_fuse(attr), 0)),
                 Err(e) => {
-                    error!("lstat after mkdir({:?}, {:o}): {}", real, mode, e);
+                    error!("lstat after mkdir({:?}, {:#o}): {}", real, mode, e);
                     Err(e)   // if this happens, yikes
                 },
             }
@@ -564,6 +564,37 @@ impl FilesystemMT for PassthroughFS {
                 error!("link({:?}, {:?}): {}", real, newreal, e);
                 Err(e.raw_os_error().unwrap())
             },
+        }
+    }
+
+    fn create(&self, _req: RequestInfo, parent: &Path, name: &Path, mode: u32, flags: u32) -> ResultCreate {
+        debug!("create: {:?}/{:?} (mode={:#o}, flags={:#x})", parent, name, mode, flags);
+
+        let real = PathBuf::from(self.real_path(parent)).join(name);
+        let fd = unsafe {
+            let real_c = CString::from_vec_unchecked(real.clone().into_os_string().into_vec());
+            libc::open(real_c.as_ptr(), flags as i32 | libc::O_CREAT | libc::O_EXCL, mode)
+        };
+
+        if -1 == fd {
+            let ioerr = io::Error::last_os_error();
+            error!("create({:?}): {}", real, ioerr);
+            Err(ioerr.raw_os_error().unwrap())
+        } else {
+            match libc_wrappers::lstat(real.clone().into_os_string()) {
+                Ok(attr) => Ok(CreatedEntry {
+                    ttl: TTL,
+                    attr: stat_to_fuse(attr),
+                    generation: 0,
+                    fh: fd as u64,
+                    flags: flags,
+                }),
+                Err(e) => {
+                    error!("lstat after create({:?}): {}", real, io::Error::from_raw_os_error(e));
+                    Err(e)
+                },
+            }
+
         }
     }
 }
