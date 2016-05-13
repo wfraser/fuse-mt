@@ -120,7 +120,10 @@ impl FilesystemMT for PassthroughFS {
         let path = PathBuf::from(parent).join(name);
         match self.stat_real(&path) {
             Ok(attr) => Ok((TTL, attr, 0)),
-            Err(e) => Err(e.raw_os_error().unwrap()),
+            Err(e) => {
+                error!("stat_real({:?}): {}", path, e);
+                Err(e.raw_os_error().unwrap())
+            },
         }
     }
 
@@ -129,7 +132,11 @@ impl FilesystemMT for PassthroughFS {
         debug!("opendir: {:?}", real);
         match libc_wrappers::opendir(real) {
             Ok(fh) => Ok((fh, 0)),
-            Err(e) => Err(e)
+            Err(e) => {
+                let ioerr = io::Error::from_raw_os_error(e);
+                error!("opendir({:?}): {}", path, ioerr);
+                Err(e)
+            }
         }
     }
 
