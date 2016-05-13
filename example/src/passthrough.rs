@@ -138,18 +138,13 @@ impl FilesystemMT for PassthroughFS {
         libc_wrappers::closedir(fh)
     }
 
-    fn readdir(&self, _req: RequestInfo, path: &Path, fh: u64, offset: u64) -> ResultReaddir {
+    fn readdir(&self, _req: RequestInfo, path: &Path, fh: u64, _offset: u64) -> ResultReaddir {
         debug!("readdir: {:?}", path);
         let mut entries: Vec<DirectoryEntry> = vec![];
 
         if fh == 0 {
             error!("readdir: missing fh");
             return Err(libc::EINVAL);
-        }
-
-        if offset == 0 {
-            entries.push(DirectoryEntry { name: PathBuf::from("."), kind: FileType::Directory });
-            entries.push(DirectoryEntry { name: PathBuf::from(".."), kind: FileType::Directory });
         }
 
         loop {
