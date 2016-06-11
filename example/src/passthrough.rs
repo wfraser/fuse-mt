@@ -62,6 +62,34 @@ fn stat_to_fuse(stat: libc::stat64) -> FileAttr {
     }
 }
 
+#[cfg(target_os = "macos")]
+fn statfs_to_fuse(statfs: libc::statfs) -> Statfs {
+    Statfs {
+        blocks: statfs.f_blocks,
+        bfree: statfs.f_bfree,
+        bavail: statfs.f_bavail,
+        files: statfs.f_files,
+        ffree: statfs.f_ffree,
+        bsize: statfs.f_bsize as u32,
+        namelen: 0, // TODO
+        frsize: 0, // TODO
+    }
+}
+
+#[cfg(target_os = "unix")]
+fn statfs_to_fuse(statfs: libc::statfs) -> Statfs {
+    Statfs {
+        blocks: statfs.f_blocks,
+        bfree: statfs.f_bfree,
+        bavail: statfs.f_bavail,
+        files: statfs.f_files,
+        ffree: statfs.f_ffree,
+        bsize: statfs.f_bsize as u32,
+        namelen: statfs.f_namelen,
+        frsize: statfs.f_frsize,
+    }
+}
+
 impl PassthroughFS {
     fn real_path(&self, partial: &Path) -> OsString {
         PathBuf::from(&self.target)
@@ -418,16 +446,7 @@ impl FilesystemMT for PassthroughFS {
             error!("statfs({:?}): {}", path, e);
             Err(e.raw_os_error().unwrap())
         } else {
-            Ok(Statfs {
-                blocks:     buf.f_blocks,
-                bfree:      buf.f_bfree,
-                bavail:     buf.f_bavail,
-                files:      buf.f_files,
-                ffree:      buf.f_ffree,
-                bsize:      buf.f_bsize as u32,
-                namelen:    buf.f_namelen as u32,
-                frsize:     buf.f_frsize as u32,
-            })
+            Ok(statfs_to_fuse(buf))
         }
     }
 
@@ -451,7 +470,7 @@ impl FilesystemMT for PassthroughFS {
         let real = PathBuf::from(self.real_path(parent_path)).join(name);
         let result = unsafe {
             let path_c = CString::from_vec_unchecked(real.as_os_str().as_bytes().to_vec());
-            libc::mknod(path_c.as_ptr(), mode, rdev as u64)
+            libc::mknod(path_c.as_ptr(), mode as libc::mode_t, rdev as libc::dev_t)
         };
 
         if -1 == result {
@@ -472,7 +491,7 @@ impl FilesystemMT for PassthroughFS {
         let real = PathBuf::from(self.real_path(parent_path)).join(name);
         let result = unsafe {
             let path_c = CString::from_vec_unchecked(real.as_os_str().as_bytes().to_vec());
-            libc::mkdir(path_c.as_ptr(), mode)
+            libc::mkdir(path_c.as_ptr(), mode as libc::mode_t)
         };
 
         if -1 == result {
