@@ -25,8 +25,30 @@ pub mod libc {
         pub fn lutimes(path: *const c_char, times: *const timeval) -> c_int;
     }
 
+    //
+    // Mac-Linux 64-bit compat
+    //
+
     #[cfg(target_os = "macos")]
-    pub fn truncate64(path: *const c_char, size: off_t) -> c_int {
+    pub type stat64 = stat;
+
+    #[cfg(target_os = "macos")]
+    pub unsafe fn lstat64(path: *const c_char, stat: *mut stat64) -> c_int {
+        lstat(path, stat)
+    }
+
+    #[cfg(target_os = "macos")]
+    pub unsafe fn fstat64(fd: c_int, stat: *mut stat64) -> c_int {
+        fstat(fd, stat)
+    }
+
+    #[cfg(target_os = "macos")]
+    pub unsafe fn ftruncate64(fd: c_int, length: i64) -> c_int {
+        ftruncate(fd, length as off_t)
+    }
+
+    #[cfg(target_os = "macos")]
+    pub unsafe fn truncate64(path: *const c_char, size: off_t) -> c_int {
         truncate(path, size)
     }
 
@@ -34,7 +56,7 @@ pub mod libc {
     fn timespec_to_timeval(timespec: &timespec) -> timeval {
         timeval {
             tv_sec: timespec.tv_sec,
-            tv_usec: timespec.tv_nsec * 1000,
+            tv_usec: timespec.tv_nsec as suseconds_t * 1000,
         }
     }
 
@@ -42,55 +64,55 @@ pub mod libc {
 
     // Mac OS X does not support futimens; map it to futimes with lower precision.
     #[cfg(target_os = "macos")]
-    pub fn futimens(fd: c_int, times: *const timespec) -> c_int {
-        unsafe {
-            let mut times_osx = [timespec_to_timeval(&*times),
-                                 timespec_to_timeval(&*times.offset(1))];
+    pub unsafe fn futimens(fd: c_int, times: *const timespec) -> c_int {
+        use super::super::libc_wrappers;
+        let mut times_osx = [timespec_to_timeval(&*times),
+                             timespec_to_timeval(&*times.offset(1))];
 
-            let mut stat: Option<stat64> = None;
+        let mut stat: Option<stat> = None;
 
-            if (*times).tv_nsec == UTIME_OMIT {
-                // atime is unspecified
+        if (*times).tv_nsec == UTIME_OMIT {
+            // atime is unspecified
 
+            stat = match libc_wrappers::fstat(fd as u64) {
+                Ok(s) => Some(s),
+                Err(e) => return e,
+            };
+
+            times_osx[0].tv_sec = stat.unwrap().st_atime;
+            times_osx[0].tv_usec = stat.unwrap().st_atime_nsec as suseconds_t * 1000;
+        }
+
+        if (*times.offset(1)).tv_nsec == UTIME_OMIT {
+            // mtime is unspecified
+
+            if stat.is_none() {
                 stat = match libc_wrappers::fstat(fd as u64) {
                     Ok(s) => Some(s),
                     Err(e) => return e,
                 };
-
-                times_osx[0].tv_sec = stat.unwrap().st_atime;
-                times_osx[0].tv_usec = stat.unwrap().st_atime_nsec * 1000;
             }
 
-            if (*times.offset(1)).tv_nsec == UTIME_OMIT {
-                // mtime is unspecified
-
-                if stat.is_none() {
-                    stat = match libc_wrappers::fstat(fd as u64) {
-                        Ok(s) => Some(s),
-                        Err(e) => return e,
-                    };
-                }
-
-                times_osx[1].tv_sec = stat.unwrap().st_mtime;
-                times_osx[1].tv_usec = stat.unwrap().st_mtime_nsec * 1000;
-            }
-
-            futimes(fd, &times_osx as *const timeval)
+            times_osx[1].tv_sec = stat.unwrap().st_mtime;
+            times_osx[1].tv_usec = stat.unwrap().st_mtime_nsec as suseconds_t * 1000;
         }
+
+        futimes(fd, &times_osx as *const timeval)
     }
 
     // Mac OS X does not support utimensat; map it to lutimes with lower precision.
     // The relative path feature of utimensat is not supported by this workaround.
     #[cfg(target_os = "macos")]
-    pub fn utimensat(_dirfd_ignored: c_int, path: *const c_char, times: *const timespec) -> c_int {
-        use super::super::super::libc_wrappers;
+    pub fn utimensat(_dirfd_ignored: c_int, path: *const c_char, times: *const timespec,
+                     _flag_ignored: c_int) -> c_int {
+        use super::super::libc_wrappers;
         unsafe {
             assert_eq!(*path, b'/' as c_char); // relative paths are not supported here!
             let mut times_osx = [timespec_to_timeval(&*times),
                                  timespec_to_timeval(&*times.offset(1))];
 
-            let mut stat: Option<stat64> = None;
-            fn stat_if_needed(path: *const c_char, stat: &mut Option<stat64>) -> Result<(), c_int> {
+            let mut stat: Option<stat> = None;
+            fn stat_if_needed(path: *const c_char, stat: &mut Option<stat>) -> Result<(), c_int> {
                 use std::ffi::{CStr, OsString};
                 use std::os::unix::ffi::OsStringExt;
                 if stat.is_none() {
@@ -109,7 +131,7 @@ pub mod libc {
                 }
 
                 times_osx[0].tv_sec = stat.unwrap().st_atime;
-                times_osx[0].tv_usec = stat.unwrap().st_atime_nsec * 1000;
+                times_osx[0].tv_usec = stat.unwrap().st_atime_nsec as suseconds_t * 1000;
             }
 
             if (*times.offset(1)).tv_nsec == UTIME_OMIT {
@@ -121,10 +143,18 @@ pub mod libc {
                     }
                 }
                 times_osx[1].tv_sec = stat.unwrap().st_mtime;
-                times_osx[1].tv_usec = stat.unwrap().st_mtime_nsec * 1000;
+                times_osx[1].tv_usec = stat.unwrap().st_mtime_nsec as suseconds_t * 1000;
             }
 
             lutimes(path, &times_osx as *const timeval)
         }
     }
+
+    // the value is ignored; this is for OS X compat
+    #[cfg(target_os = "macos")]
+    pub const AT_FDCWD: c_int = -100;
+
+    // the value is ignored; this is for OS X compat
+    #[cfg(target_os = "macos")]
+    pub const AT_SYMLINK_NOFOLLOW: c_int = 0x400;
 }

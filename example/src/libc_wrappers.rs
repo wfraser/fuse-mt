@@ -8,7 +8,7 @@ use std::io;
 use std::mem;
 use std::ptr;
 use std::os::unix::ffi::OsStringExt;
-use libc;
+use libc_extras::libc;
 
 pub fn opendir(path: OsString) -> Result<u64, libc::c_int> {
     let path_c = match CString::new(path.into_vec()) {
