@@ -76,7 +76,7 @@ fn statfs_to_fuse(statfs: libc::statfs) -> Statfs {
     }
 }
 
-#[cfg(target_os = "unix")]
+#[cfg(target_os = "linux")]
 fn statfs_to_fuse(statfs: libc::statfs) -> Statfs {
     Statfs {
         blocks: statfs.f_blocks,
@@ -85,8 +85,8 @@ fn statfs_to_fuse(statfs: libc::statfs) -> Statfs {
         files: statfs.f_files,
         ffree: statfs.f_ffree,
         bsize: statfs.f_bsize as u32,
-        namelen: statfs.f_namelen,
-        frsize: statfs.f_frsize,
+        namelen: statfs.f_namelen as u32,
+        frsize: statfs.f_frsize as u32,
     }
 }
 
