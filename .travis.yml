@@ -9,3 +9,9 @@ matrix:
 before_install:
     - sudo apt-get -qq update
     - sudo apt-get install -y libfuse-dev
+script:
+    - cargo build
+    - cargo test
+    - cd example
+    - cargo build
+    - cargo test
