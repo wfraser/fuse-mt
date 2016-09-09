@@ -4,8 +4,12 @@ version = "0.1.0"
 authors = ["William R. Fraser <wfraser@codewise.org>"]
 
 [dependencies]
-fuse = "0.2"
+#fuse = "0.2"
 libc = "0.2"
 log = "0.3"
 threadpool = "1.0"
 time = "0.1"
+
+[dependencies.fuse]
+git = "https://github.com/wfraser/rust-fuse"
+branch = "xattrs"

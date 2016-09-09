@@ -618,6 +618,40 @@ impl FilesystemMT for PassthroughFS {
 
         }
     }
+
+    fn listxattr(&self, _req: RequestInfo, path: &Path, size: u32) -> ResultXattr {
+        debug!("listxattr: {:?}", path);
+
+        let real = self.real_path(path);
+
+        if size > 0 {
+            let mut data = Vec::<u8>::with_capacity(size as usize);
+            unsafe { data.set_len(size as usize) };
+            let nread = try!(libc_wrappers::llistxattr(real, data.as_mut_slice()));
+            data.truncate(nread);
+            Ok(Xattr::Data(data))
+        } else {
+            let nbytes = try!(libc_wrappers::llistxattr(real, &mut[]));
+            Ok(Xattr::Size(nbytes as u32))
+        }
+    }
+
+    fn getxattr(&self, _req: RequestInfo, path: &Path, name: &OsStr, size: u32) -> ResultXattr {
+        debug!("getxattr: {:?} {:?} {}", path, name, size);
+
+        let real = self.real_path(path);
+
+        if size > 0 {
+            let mut data = Vec::<u8>::with_capacity(size as usize);
+            unsafe { data.set_len(size as usize) };
+            let nread = try!(libc_wrappers::lgetxattr(real, name.to_owned(), data.as_mut_slice()));
+            data.truncate(nread);
+            Ok(Xattr::Data(data))
+        } else {
+            let nbytes = try!(libc_wrappers::lgetxattr(real, name.to_owned(), &mut []));
+            Ok(Xattr::Size(nbytes as u32))
+        }
+    }
 }
 
 /// A file that is not closed upon leaving scope.

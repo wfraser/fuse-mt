@@ -107,3 +107,51 @@ pub fn fstat(fd: u64) -> Result<libc::stat64, libc::c_int> {
 
     Ok(buf)
 }
+
+pub fn llistxattr(path: OsString, buf: &mut [u8]) -> Result<usize, libc::c_int> {
+    let path_c = match CString::new(path.into_vec()) {
+        Ok(s) => s,
+        Err(e) => {
+            error!("llistxattrs: path {:?} contains interior NUL byte",
+                   OsString::from_vec(e.into_vec()));
+            return Err(libc::EINVAL);
+        }
+    };
+
+    let result = unsafe {
+        libc::llistxattr(path_c.as_ptr(), mem::transmute(buf.as_mut_ptr()), buf.len())
+    };
+    match result {
+        -1 => Err(io::Error::last_os_error().raw_os_error().unwrap()),
+        nbytes => Ok(nbytes as usize),
+    }
+}
+
+pub fn lgetxattr(path: OsString, name: OsString, buf: &mut [u8]) -> Result<usize, libc::c_int> {
+    let path_c = match CString::new(path.into_vec()) {
+        Ok(s) => s,
+        Err(e) => {
+            error!("lgetxattr: path {:?} contains interior NUL byte",
+                   OsString::from_vec(e.into_vec()));
+            return Err(libc::EINVAL);
+        }
+    };
+
+    let name_c = match CString::new(name.into_vec()) {
+        Ok(s) => s,
+        Err(e) => {
+            error!("lgetxattr: attr name {:?} contains interior NUL byte",
+                   OsString::from_vec(e.into_vec()));
+            return Err(libc::EINVAL);
+        }
+    };
+
+    let result = unsafe {
+        libc::lgetxattr(path_c.as_ptr(), name_c.as_ptr(), mem::transmute(buf.as_mut_ptr()),
+            buf.len())
+    };
+    match result {
+        -1 => Err(io::Error::last_os_error().raw_os_error().unwrap()),
+        nbytes => Ok(nbytes as usize),
+    }
+}

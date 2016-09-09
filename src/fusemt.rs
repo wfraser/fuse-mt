@@ -4,6 +4,7 @@
 // Copyright (c) 2016 by William R. Fraser
 //
 
+use std::ffi::OsStr;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
@@ -60,6 +61,11 @@ pub struct CreatedEntry {
     pub flags: u32,
 }
 
+pub enum Xattr {
+    Size(u32),
+    Data(Vec<u8>),
+}
+
 pub type ResultEmpty = Result<(), libc::c_int>;
 pub type ResultGetattr = Result<(Timespec, FileAttr), libc::c_int>;
 pub type ResultEntry = Result<(Timespec, FileAttr, u64), libc::c_int>;
@@ -69,6 +75,7 @@ pub type ResultData = Result<Vec<u8>, libc::c_int>;
 pub type ResultWrite = Result<u32, libc::c_int>;
 pub type ResultStatfs = Result<Statfs, libc::c_int>;
 pub type ResultCreate = Result<CreatedEntry, libc::c_int>;
+pub type ResultXattr = Result<Xattr, libc::c_int>;
 
 pub trait FilesystemMT {
     fn init(&self, _req: RequestInfo) -> ResultEmpty {
@@ -188,13 +195,21 @@ pub trait FilesystemMT {
         Err(libc::ENOSYS)
     }
 
-    // setxattr
+    fn setxattr(&self, _req: RequestInfo, _path: &Path, _name: &OsStr, _value: &[u8], _flags: u32, _position: u32) -> ResultEmpty {
+        Err(libc::ENOSYS)
+    }
 
-    // getxattr
+    fn getxattr(&self, _req: RequestInfo, _path: &Path, _name: &OsStr, _size: u32) -> ResultXattr {
+        Err(libc::ENOSYS)
+    }
 
-    // listxattr
+    fn listxattr(&self, _req: RequestInfo, _path: &Path, _size: u32) -> ResultXattr {
+        Err(libc::ENOSYS)
+    }
 
-    // removexattr
+    fn removexattr(&self, _req: RequestInfo, _path: &Path, _name: &OsStr) -> ResultEmpty {
+        Err(libc::ENOSYS)
+    }
 
     // access
 
@@ -609,9 +624,50 @@ impl<T: FilesystemMT + Sync + Send + 'static> Filesystem for FuseMT<T> {
 
     // setxattr
 
-    // getxattr
+    fn getxattr(&mut self, req: &Request, ino: u64, name: &OsStr, size: u32, reply: ReplyXattr) {
+        let path = if ino == 1 {
+            Arc::new(PathBuf::from("/"))
+        } else {
+            get_path!(self, ino, reply)
+        };
 
-    // listxattr
+        debug!("getxattr: {:?} {:?}", path, name);
+        match self.target.getxattr(req.info(), &path, name, size) {
+            Ok(Xattr::Size(size)) => {
+                debug!("getxattr: sending size {}", size);
+                reply.size(size)
+            },
+            Ok(Xattr::Data(vec)) => {
+                debug!("getxattr: sending {} bytes", vec.len());
+                reply.data(&vec)
+            },
+            Err(e) => {
+                debug!("getxattr: error {}", e);
+                reply.error(e)
+            },
+        }
+    }
+
+    fn listxattr(&mut self, req: &Request, ino: u64, size: u32, reply: ReplyXattr) {
+        let path = if ino == 1 {
+            Arc::new(PathBuf::from("/"))
+        } else {
+            get_path!(self, ino, reply)
+        };
+
+        debug!("listxattr: {:?}", path);
+        match self.target.listxattr(req.info(), &path, size) {
+            Ok(Xattr::Size(size)) => {
+                debug!("listxattr: sending size {}", size);
+                reply.size(size)
+            },
+            Ok(Xattr::Data(vec)) => {
+                debug!("listxattr: sending {} bytes", vec.len());
+                reply.data(&vec)
+            }
+            Err(e) => reply.error(e),
+        }
+    }
 
     // removexattr
 
