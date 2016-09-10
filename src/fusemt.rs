@@ -232,13 +232,11 @@ pub struct FuseMT<T> {
 
 impl<T: FilesystemMT + Sync + Send + 'static> FuseMT<T> {
     pub fn new(target_fs: T, num_threads: usize) -> FuseMT<T> {
-        let mut adaptor = FuseMT {
+        FuseMT {
             target: Arc::new(target_fs),
             inodes: InodeTable::new(),
             threads: ThreadPool::new(num_threads),
-        };
-        adaptor.inodes.add(Arc::new(PathBuf::from("/")));
-        adaptor
+        }
     }
 }
 
@@ -271,6 +269,7 @@ impl<T: FilesystemMT + Sync + Send + 'static> Filesystem for FuseMT<T> {
         match self.target.lookup(req.info(), Path::new(&*parent_path), name) {
             Ok((ref ttl, ref mut attr, generation)) => {
                 let ino = self.inodes.add_or_get(path.clone());
+                self.inodes.lookup(ino);
                 attr.ino = ino;
                 reply.entry(ttl, attr, generation);
             },
@@ -278,7 +277,11 @@ impl<T: FilesystemMT + Sync + Send + 'static> Filesystem for FuseMT<T> {
         }
     }
 
-    // fn forget(&mut self, _req: &Request, _ino: u64, _nlookup: u64)
+    fn forget(&mut self, _req: &Request, ino: u64, nlookup: u64) {
+        let path = self.inodes.get_path(ino).unwrap();
+        let lookups = self.inodes.forget(ino, nlookup);
+        debug!("forget: inode {} ({:?}) now at {} lookups", ino, path, lookups);
+    }
 
     fn getattr(&mut self, req: &Request, ino: u64, reply: ReplyAttr) {
         let path = get_path!(self, ino, reply);
