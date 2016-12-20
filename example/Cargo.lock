@@ -2,7 +2,7 @@
 name = "passthrufs"
 version = "0.1.0"
 dependencies = [
- "fuse 0.2.8 (git+https://github.com/wfraser/rust-fuse?branch=xattrs)",
+ "fuse 0.2.8 (git+https://github.com/zargony/rust-fuse?rev=4283cd10b461ebadbdfe04d4335529f508c3435d)",
  "fuse_mt 0.1.0",
  "libc 0.2.10 (registry+https://github.com/rust-lang/crates.io-index)",
  "log 0.3.6 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -12,9 +12,9 @@ dependencies = [
 [[package]]
 name = "fuse"
 version = "0.2.8"
-source = "git+https://github.com/wfraser/rust-fuse?branch=xattrs#cb486748f50fd3d9348219b2c7858462acad7966"
+source = "git+https://github.com/zargony/rust-fuse?rev=4283cd10b461ebadbdfe04d4335529f508c3435d#4283cd10b461ebadbdfe04d4335529f508c3435d"
 dependencies = [
- "libc 0.1.12 (registry+https://github.com/rust-lang/crates.io-index)",
+ "libc 0.2.10 (registry+https://github.com/rust-lang/crates.io-index)",
  "log 0.3.6 (registry+https://github.com/rust-lang/crates.io-index)",
  "pkg-config 0.3.8 (registry+https://github.com/rust-lang/crates.io-index)",
  "thread-scoped 1.0.1 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -25,7 +25,7 @@ dependencies = [
 name = "fuse_mt"
 version = "0.1.0"
 dependencies = [
- "fuse 0.2.8 (git+https://github.com/wfraser/rust-fuse?branch=xattrs)",
+ "fuse 0.2.8 (git+https://github.com/zargony/rust-fuse?rev=4283cd10b461ebadbdfe04d4335529f508c3435d)",
  "libc 0.2.10 (registry+https://github.com/rust-lang/crates.io-index)",
  "log 0.3.6 (registry+https://github.com/rust-lang/crates.io-index)",
  "threadpool 1.0.0 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -40,11 +40,6 @@ dependencies = [
  "winapi 0.2.6 (registry+https://github.com/rust-lang/crates.io-index)",
  "winapi-build 0.1.1 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
-
-[[package]]
-name = "libc"
-version = "0.1.12"
-source = "registry+https://github.com/rust-lang/crates.io-index"
 
 [[package]]
 name = "libc"
@@ -91,3 +86,14 @@ name = "winapi-build"
 version = "0.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 
+[metadata]
+"checksum fuse 0.2.8 (git+https://github.com/zargony/rust-fuse?rev=4283cd10b461ebadbdfe04d4335529f508c3435d)" = "<none>"
+"checksum kernel32-sys 0.2.2 (registry+https://github.com/rust-lang/crates.io-index)" = "7507624b29483431c0ba2d82aece8ca6cdba9382bff4ddd0f7490560c056098d"
+"checksum libc 0.2.10 (registry+https://github.com/rust-lang/crates.io-index)" = "55f3730be7e803cf350d32061958171731c2395831fbd67a61083782808183e0"
+"checksum log 0.3.6 (registry+https://github.com/rust-lang/crates.io-index)" = "ab83497bf8bf4ed2a74259c1c802351fcd67a65baa86394b6ba73c36f4838054"
+"checksum pkg-config 0.3.8 (registry+https://github.com/rust-lang/crates.io-index)" = "8cee804ecc7eaf201a4a207241472cc870e825206f6c031e3ee2a72fa425f2fa"
+"checksum thread-scoped 1.0.1 (registry+https://github.com/rust-lang/crates.io-index)" = "14387dce246d09efe184c8ebc34d9db5c0672a908b2f50efc53359ae13d5ae68"
+"checksum threadpool 1.0.0 (registry+https://github.com/rust-lang/crates.io-index)" = "16094a09d6dd4e16e46469c981279745d66d51c126fe567a0a11ff63810b14b5"
+"checksum time 0.1.35 (registry+https://github.com/rust-lang/crates.io-index)" = "3c7ec6d62a20df54e07ab3b78b9a3932972f4b7981de295563686849eb3989af"
+"checksum winapi 0.2.6 (registry+https://github.com/rust-lang/crates.io-index)" = "4dfaaa8fbdaa618fa6914b59b2769d690dd7521920a18d84b42d254678dd5fd4"
+"checksum winapi-build 0.1.1 (registry+https://github.com/rust-lang/crates.io-index)" = "2d315eee3b34aca4797b2da6b13ed88266e6d612562a0c46390af8299fc699bc"

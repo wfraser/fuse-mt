@@ -11,5 +11,7 @@ threadpool = "1.0"
 time = "0.1"
 
 [dependencies.fuse]
-git = "https://github.com/wfraser/rust-fuse"
-branch = "xattrs"
+#git = "https://github.com/wfraser/rust-fuse"
+#branch = "xattrs"
+git = "https://github.com/zargony/rust-fuse"
+rev = "4283cd10b461ebadbdfe04d4335529f508c3435d"

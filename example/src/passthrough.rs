@@ -142,7 +142,7 @@ impl FilesystemMT for PassthroughFS {
         }
     }
 
-    fn lookup(&self, _req: RequestInfo, parent: &Path, name: &Path) -> ResultEntry {
+    fn lookup(&self, _req: RequestInfo, parent: &Path, name: &OsStr) -> ResultEntry {
         debug!("lookup: {:?}/{:?}", parent, name);
 
         let path = PathBuf::from(parent).join(name);
@@ -466,7 +466,7 @@ impl FilesystemMT for PassthroughFS {
         }
     }
 
-    fn mknod(&self, _req: RequestInfo, parent_path: &Path, name: &Path, mode: u32, rdev: u32) -> ResultEntry {
+    fn mknod(&self, _req: RequestInfo, parent_path: &Path, name: &OsStr, mode: u32, rdev: u32) -> ResultEntry {
         debug!("mknod: {:?}/{:?} (mode={:#o}, rdev={})", parent_path, name, mode, rdev);
 
         let real = PathBuf::from(self.real_path(parent_path)).join(name);
@@ -487,7 +487,7 @@ impl FilesystemMT for PassthroughFS {
         }
     }
 
-    fn mkdir(&self, _req: RequestInfo, parent_path: &Path, name: &Path, mode: u32) -> ResultEntry {
+    fn mkdir(&self, _req: RequestInfo, parent_path: &Path, name: &OsStr, mode: u32) -> ResultEntry {
         debug!("mkdir {:?}/{:?} (mode={:#o})", parent_path, name, mode);
 
         let real = PathBuf::from(self.real_path(parent_path)).join(name);
@@ -511,7 +511,7 @@ impl FilesystemMT for PassthroughFS {
         }
     }
 
-    fn unlink(&self, _req: RequestInfo, parent_path: &Path, name: &Path) -> ResultEmpty {
+    fn unlink(&self, _req: RequestInfo, parent_path: &Path, name: &OsStr) -> ResultEmpty {
         debug!("unlink {:?}/{:?}", parent_path, name);
 
         let real = PathBuf::from(self.real_path(parent_path)).join(name);
@@ -522,7 +522,7 @@ impl FilesystemMT for PassthroughFS {
             })
     }
 
-    fn rmdir(&self, _req: RequestInfo, parent_path: &Path, name: &Path) -> ResultEmpty {
+    fn rmdir(&self, _req: RequestInfo, parent_path: &Path, name: &OsStr) -> ResultEmpty {
         debug!("rmdir: {:?}/{:?}", parent_path, name);
 
         let real = PathBuf::from(self.real_path(parent_path)).join(name);
@@ -533,7 +533,7 @@ impl FilesystemMT for PassthroughFS {
             })
     }
 
-    fn symlink(&self, _req: RequestInfo, parent_path: &Path, name: &Path, target: &Path) -> ResultEntry {
+    fn symlink(&self, _req: RequestInfo, parent_path: &Path, name: &OsStr, target: &Path) -> ResultEntry {
         debug!("symlink: {:?}/{:?} -> {:?}", parent_path, name, target);
 
         let real = PathBuf::from(self.real_path(parent_path)).join(name);
@@ -554,7 +554,7 @@ impl FilesystemMT for PassthroughFS {
         }
     }
 
-    fn rename(&self, _req: RequestInfo, parent_path: &Path, name: &Path, newparent_path: &Path, newname: &Path) -> ResultEmpty {
+    fn rename(&self, _req: RequestInfo, parent_path: &Path, name: &OsStr, newparent_path: &Path, newname: &OsStr) -> ResultEmpty {
         debug!("rename: {:?}/{:?} -> {:?}/{:?}", parent_path, name, newparent_path, newname);
 
         let real = PathBuf::from(self.real_path(parent_path)).join(name);
@@ -566,7 +566,7 @@ impl FilesystemMT for PassthroughFS {
             })
     }
 
-    fn link(&self, _req: RequestInfo, path: &Path, newparent: &Path, newname: &Path) -> ResultEntry {
+    fn link(&self, _req: RequestInfo, path: &Path, newparent: &Path, newname: &OsStr) -> ResultEntry {
         debug!("link: {:?} -> {:?}/{:?}", path, newparent, newname);
 
         let real = self.real_path(path);
@@ -588,7 +588,7 @@ impl FilesystemMT for PassthroughFS {
         }
     }
 
-    fn create(&self, _req: RequestInfo, parent: &Path, name: &Path, mode: u32, flags: u32) -> ResultCreate {
+    fn create(&self, _req: RequestInfo, parent: &Path, name: &OsStr, mode: u32, flags: u32) -> ResultCreate {
         debug!("create: {:?}/{:?} (mode={:#o}, flags={:#x})", parent, name, mode, flags);
 
         let real = PathBuf::from(self.real_path(parent)).join(name);

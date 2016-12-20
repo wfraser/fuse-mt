@@ -86,7 +86,7 @@ pub trait FilesystemMT {
         // Nothing.
     }
 
-    fn lookup(&self, _req: RequestInfo, _parent: &Path, _name: &Path) -> ResultEntry {
+    fn lookup(&self, _req: RequestInfo, _parent: &Path, _name: &OsStr) -> ResultEntry {
         Err(libc::ENOSYS)
     }
 
@@ -123,31 +123,31 @@ pub trait FilesystemMT {
         Err(libc::ENOSYS)
     }
 
-    fn mknod(&self, _req: RequestInfo, _parent: &Path, _name: &Path, _mode: u32, _rdev: u32) -> ResultEntry {
+    fn mknod(&self, _req: RequestInfo, _parent: &Path, _name: &OsStr, _mode: u32, _rdev: u32) -> ResultEntry {
         Err(libc::ENOSYS)
     }
 
-    fn mkdir(&self, _req: RequestInfo, _parent: &Path, _name: &Path, _mode: u32) -> ResultEntry {
+    fn mkdir(&self, _req: RequestInfo, _parent: &Path, _name: &OsStr, _mode: u32) -> ResultEntry {
         Err(libc::ENOSYS)
     }
 
-    fn unlink(&self, _req: RequestInfo, _parent: &Path, _name: &Path) -> ResultEmpty {
+    fn unlink(&self, _req: RequestInfo, _parent: &Path, _name: &OsStr) -> ResultEmpty {
         Err(libc::ENOSYS)
     }
 
-    fn rmdir(&self, _req: RequestInfo, _parent: &Path, _name: &Path) -> ResultEmpty {
+    fn rmdir(&self, _req: RequestInfo, _parent: &Path, _name: &OsStr) -> ResultEmpty {
         Err(libc::ENOSYS)
     }
 
-    fn symlink(&self, _req: RequestInfo, _parent: &Path, _name: &Path, _target: &Path) -> ResultEntry {
+    fn symlink(&self, _req: RequestInfo, _parent: &Path, _name: &OsStr, _target: &Path) -> ResultEntry {
         Err(libc::ENOSYS)
     }
 
-    fn rename(&self, _req: RequestInfo, _parent: &Path, _name: &Path, _newparent: &Path, _newname: &Path) -> ResultEmpty {
+    fn rename(&self, _req: RequestInfo, _parent: &Path, _name: &OsStr, _newparent: &Path, _newname: &OsStr) -> ResultEmpty {
         Err(libc::ENOSYS)
     }
 
-    fn link(&self, _req: RequestInfo, _path: &Path, _newparent: &Path, _newname: &Path) -> ResultEntry {
+    fn link(&self, _req: RequestInfo, _path: &Path, _newparent: &Path, _newname: &OsStr) -> ResultEntry {
         Err(libc::ENOSYS)
     }
 
@@ -213,7 +213,7 @@ pub trait FilesystemMT {
 
     // access
 
-    fn create(&self, _req: RequestInfo, _parent: &Path, _name: &Path, _mode: u32, _flags: u32) -> ResultCreate {
+    fn create(&self, _req: RequestInfo, _parent: &Path, _name: &OsStr, _mode: u32, _flags: u32) -> ResultCreate {
         Err(libc::ENOSYS)
     }
 
@@ -264,7 +264,7 @@ impl<T: FilesystemMT + Sync + Send + 'static> Filesystem for FuseMT<T> {
         self.target.destroy(req.info());
     }
 
-    fn lookup(&mut self, req: &Request, parent: u64, name: &Path, reply: ReplyEntry) {
+    fn lookup(&mut self, req: &Request, parent: u64, name: &OsStr, reply: ReplyEntry) {
         let parent_path = get_path!(self, parent, reply);
         debug!("lookup: {:?}, {:?}", parent_path, name);
         let path = Arc::new((*parent_path).clone().join(name));
@@ -368,7 +368,7 @@ impl<T: FilesystemMT + Sync + Send + 'static> Filesystem for FuseMT<T> {
         }
     }
 
-    fn mknod(&mut self, req: &Request, parent: u64, name: &Path, mode: u32, rdev: u32, reply: ReplyEntry) {
+    fn mknod(&mut self, req: &Request, parent: u64, name: &OsStr, mode: u32, rdev: u32, reply: ReplyEntry) {
         let parent_path = get_path!(self, parent, reply);
         debug!("mknod: {:?}/{:?}", parent_path, name);
         match self.target.mknod(req.info(), &parent_path, name, mode, rdev) {
@@ -377,7 +377,7 @@ impl<T: FilesystemMT + Sync + Send + 'static> Filesystem for FuseMT<T> {
         }
     }
 
-    fn mkdir(&mut self, req: &Request, parent: u64, name: &Path, mode: u32, reply: ReplyEntry) {
+    fn mkdir(&mut self, req: &Request, parent: u64, name: &OsStr, mode: u32, reply: ReplyEntry) {
         let parent_path = get_path!(self, parent, reply);
         debug!("mkdir: {:?}/{:?}", parent_path, name);
         match self.target.mkdir(req.info(), &parent_path, name, mode) {
@@ -390,7 +390,7 @@ impl<T: FilesystemMT + Sync + Send + 'static> Filesystem for FuseMT<T> {
         }
     }
 
-    fn unlink(&mut self, req: &Request, parent: u64, name: &Path, reply: ReplyEmpty) {
+    fn unlink(&mut self, req: &Request, parent: u64, name: &OsStr, reply: ReplyEmpty) {
         let parent_path = get_path!(self, parent, reply);
         debug!("unlink: {:?}/{:?}", parent_path, name);
         match self.target.unlink(req.info(), &parent_path, name) {
@@ -399,7 +399,7 @@ impl<T: FilesystemMT + Sync + Send + 'static> Filesystem for FuseMT<T> {
         }
     }
 
-    fn rmdir(&mut self, req: &Request, parent: u64, name: &Path, reply: ReplyEmpty) {
+    fn rmdir(&mut self, req: &Request, parent: u64, name: &OsStr, reply: ReplyEmpty) {
         let parent_path = get_path!(self, parent, reply);
         debug!("rmdir: {:?}/{:?}", parent_path, name);
         match self.target.rmdir(req.info(), &parent_path, name) {
@@ -408,7 +408,7 @@ impl<T: FilesystemMT + Sync + Send + 'static> Filesystem for FuseMT<T> {
         }
     }
 
-    fn symlink(&mut self, req: &Request, parent: u64, name: &Path, link: &Path, reply: ReplyEntry) {
+    fn symlink(&mut self, req: &Request, parent: u64, name: &OsStr, link: &Path, reply: ReplyEntry) {
         let parent_path = get_path!(self, parent, reply);
         debug!("symlink: {:?}/{:?} -> {:?}", parent_path, name, link);
         match self.target.symlink(req.info(), &parent_path, name, link) {
@@ -421,7 +421,7 @@ impl<T: FilesystemMT + Sync + Send + 'static> Filesystem for FuseMT<T> {
         }
     }
 
-    fn rename(&mut self, req: &Request, parent: u64, name: &Path, newparent: u64, newname: &Path, reply: ReplyEmpty) {
+    fn rename(&mut self, req: &Request, parent: u64, name: &OsStr, newparent: u64, newname: &OsStr, reply: ReplyEmpty) {
         let parent_path = get_path!(self, parent, reply);
         let newparent_path = get_path!(self, newparent, reply);
         debug!("rename: {:?}/{:?} -> {:?}/{:?}", parent_path, name, newparent_path, newname);
@@ -434,7 +434,7 @@ impl<T: FilesystemMT + Sync + Send + 'static> Filesystem for FuseMT<T> {
         }
     }
 
-    fn link(&mut self, req: &Request, ino: u64, newparent: u64, newname: &Path, reply: ReplyEntry) {
+    fn link(&mut self, req: &Request, ino: u64, newparent: u64, newname: &OsStr, reply: ReplyEntry) {
         let path = get_path!(self, ino, reply);
         let newparent_path = get_path!(self, newparent, reply);
         debug!("link: {:?} -> {:?}/{:?}", path, newparent_path, newname);
@@ -673,7 +673,7 @@ impl<T: FilesystemMT + Sync + Send + 'static> Filesystem for FuseMT<T> {
 
     // access
 
-    fn create(&mut self, req: &Request, parent: u64, name: &Path, mode: u32, flags: u32, reply: ReplyCreate) {
+    fn create(&mut self, req: &Request, parent: u64, name: &OsStr, mode: u32, flags: u32, reply: ReplyCreate) {
         let parent_path = get_path!(self, parent, reply);
         debug!("create: {:?}/{:?} (mode={:#o}, flags={:#x})", parent_path, name, mode, flags);
         match self.target.create(req.info(), &parent_path, name, mode, flags) {
