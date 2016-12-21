@@ -9,4 +9,5 @@ extern crate log;
 mod fusemt;
 mod inode_table;
 
+pub use fuse::*;
 pub use fusemt::*;
