@@ -15,7 +15,6 @@ use std::path::{Path, PathBuf};
 use super::libc_extras::libc;
 use super::libc_wrappers;
 
-use fuse::*;
 use fuse_mt::*;
 use time::*;
 

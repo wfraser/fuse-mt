@@ -6,7 +6,6 @@
 use std::env;
 use std::ffi::{OsStr, OsString};
 
-extern crate fuse;
 extern crate libc;
 extern crate time;
 
@@ -51,5 +50,5 @@ fn main() {
 
     let fuse_args: Vec<&OsStr> = vec![&OsStr::new("-o"), &OsStr::new("auto_unmount")];
 
-    fuse::mount(fuse_mt::FuseMT::new(filesystem, 1), &args[2], &fuse_args).unwrap();
+    fuse_mt::mount(fuse_mt::FuseMT::new(filesystem, 1), &args[2], &fuse_args).unwrap();
 }
