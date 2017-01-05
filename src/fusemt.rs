@@ -397,7 +397,10 @@ impl<T: FilesystemMT + Sync + Send + 'static> Filesystem for FuseMT<T> {
         let parent_path = get_path!(self, parent, reply);
         debug!("unlink: {:?}/{:?}", parent_path, name);
         match self.target.unlink(req.info(), &parent_path, name) {
-            Ok(()) => reply.ok(),
+            Ok(()) => {
+                self.inodes.unlink(&parent_path.join(name));
+                reply.ok()
+            },
             Err(e) => reply.error(e),
         }
     }
@@ -566,6 +569,9 @@ impl<T: FilesystemMT + Sync + Send + 'static> Filesystem for FuseMT<T> {
                         let path = Arc::new(path.clone().join(&entry.name));
                         self.inodes.add_or_get(path)
                     };
+
+                    debug!("readdir: adding entry #{}, inode {}, {:?}", index, entry_inode,
+                           entry.name);
 
                     let buffer_full: bool = reply.add(
                         entry_inode,

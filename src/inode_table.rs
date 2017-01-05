@@ -10,6 +10,7 @@ use std::path::{Path, PathBuf};
 
 pub type Inode = u64;
 
+#[derive(Debug)]
 pub struct InodeTable {
     path_to_inode: BTreeMap<Arc<PathBuf>, Inode>,
     inode_to_path: BTreeMap<Inode, Arc<PathBuf>>,
@@ -29,7 +30,11 @@ impl InodeTable {
         let inode = self.next_inode;
         self.next_inode += 1;
         match self.path_to_inode.insert(path.clone(), inode) {
-            Some(_) => { panic!("duplicate path inserted into inode table!"); },
+            Some(_) => {
+                debug!("inode table: {:?}", self);
+                debug!("added path: {:?}", path);
+                panic!("duplicate path inserted into inode table!");
+            },
             None => ()
         }
         self.inode_to_path.insert(inode, path.clone());
@@ -71,6 +76,11 @@ impl InodeTable {
 
         self.path_to_inode.insert(newpath.clone(), ino).unwrap(); // this can replace a path with a new inode
         self.inode_to_path.insert(ino, newpath);
+    }
+
+    pub fn unlink(&mut self, path: &Path) {
+        // The inode is now unreachable by this name, but the inode->path mapping remains.
+        self.path_to_inode.remove(Pathish::new(path));
     }
 }
 
