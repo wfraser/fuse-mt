@@ -573,12 +573,13 @@ impl<T: FilesystemMT + Sync + Send + 'static> Filesystem for FuseMT<T> {
                     } else if entry.name == Path::new("..") {
                         parent_inode
                     } else {
-                        let path = Arc::new(path.clone().join(&entry.name));
-                        self.inodes.add_or_get(path)
+                        // Don't bother looking in the inode table for the entry; FUSE doesn't pre-
+                        // populate its inode cache with this value, so subsequent access to these
+                        // files is going to involve it issuing a LOOKUP operation anyway.
+                        !(1 as Inode)
                     };
 
-                    debug!("readdir: adding entry #{}, inode {}, {:?}", index, entry_inode,
-                           entry.name);
+                    debug!("readdir: adding entry #{}, {:?}", index, entry.name);
 
                     let buffer_full: bool = reply.add(
                         entry_inode,

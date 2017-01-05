@@ -64,8 +64,9 @@ impl InodeTable {
         });
         self.table[idx] = Some(InodeTableEntry {
             path: path.clone(),
-            lookups: 0,
+            lookups: 1,
         });
+        debug!("explicitly adding {} -> {:?} with 1 lookups", idx+1, path);
         let previous = self.by_path.insert(path, idx);
         if previous.is_some() {
             error!("inode table buggered: {:?}", self);
@@ -89,6 +90,7 @@ impl InodeTable {
                     table_ref.push(None);
                     table_ref.len() - 1
                 });
+                debug!("adding {} -> {:?} with 0 lookups", idx+1, path);
                 table_ref[idx] = Some(InodeTableEntry {
                     path: path,
                     lookups: 0,    // lookup must be done later
@@ -102,6 +104,8 @@ impl InodeTable {
 
     /// Get the path that corresponds to an inode, if there is one, or None, if it is not in the
     /// table.
+    /// Note that the file could be unlinked but still open, in which case it's not actually
+    /// reachable from the path returned.
     ///
     /// This operation runs in O(1) time.
     pub fn get_path(&self, inode: Inode) -> Option<Arc<PathBuf>> {
@@ -133,7 +137,9 @@ impl InodeTable {
             return;
         }
 
-        self.table[inode as usize - 1].as_mut().unwrap().lookups += 1;
+        let entry = self.table[inode as usize - 1].as_mut().unwrap();
+        debug!("lookups on {} -> {:?} now {}", inode, entry.path, entry.lookups + 1);
+        entry.lookups += 1;
     }
 
     /// Decrement the lookup count on a given inode by the given number.
@@ -158,6 +164,7 @@ impl InodeTable {
 
         {
             let entry = self.table[idx].as_mut().unwrap();
+            println!("forget entry {:?}", entry);
             assert!(n <= entry.lookups);
             entry.lookups -= n;
             lookups = entry.lookups;
@@ -170,21 +177,24 @@ impl InodeTable {
         if delete {
             self.table[idx] = None;
             self.free_list.push_back(idx);
+            // TODO: we should keep track of the inode generation and bump it when re-using inodes
         }
 
         lookups
     }
 
     /// Change an inode's path to a different one, without changing the inode number.
+    /// Lookup counts remain unchanged, even if this is replacing another file.
     pub fn rename(&mut self, oldpath: &Path, newpath: Arc<PathBuf>) {
         let idx = self.by_path.remove(Pathish::new(oldpath)).unwrap();
         self.table[idx].as_mut().unwrap().path = newpath.clone();
         self.by_path.insert(newpath, idx); // this can replace a path with a new inode
     }
 
+    /// Remove the path->inode mapping for a given path, but keep the inode around.
     pub fn unlink(&mut self, path: &Path) {
-        // The inode is now unreachable by this name, but the inode->path mapping remains.
-        self.path_to_inode.remove(Pathish::new(path));
+        self.by_path.remove(Pathish::new(path));
+        // Note that the inode->path mapping remains.
     }
 }
 
