@@ -5,6 +5,8 @@
 //
 
 pub mod libc {
+    #![allow(non_camel_case_types)]
+
     pub use ::libc::*;
 
     // stuff missing from the libc crate.
