@@ -284,7 +284,10 @@ impl<T: FilesystemMT + Sync + Send + 'static> Filesystem for FuseMT<T> {
         let path = get_path!(self, ino, reply);
         debug!("getattr: {:?}", path);
         match self.target.getattr(req.info(), &path, None) {
-            Ok((ref ttl, ref attr)) => reply.attr(ttl, attr),
+            Ok((ref ttl, ref mut attr)) => {
+                attr.ino = ino;
+                reply.attr(ttl, attr)
+            },
             Err(e) => reply.error(e),
         }
     }
