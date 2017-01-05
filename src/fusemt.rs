@@ -378,7 +378,11 @@ impl<T: FilesystemMT + Sync + Send + 'static> Filesystem for FuseMT<T> {
         let parent_path = get_path!(self, parent, reply);
         debug!("mknod: {:?}/{:?}", parent_path, name);
         match self.target.mknod(req.info(), &parent_path, name, mode, rdev) {
-            Ok((ref ttl, ref attr, generation)) => reply.entry(ttl, attr, generation),
+            Ok((ref ttl, ref mut attr, generation)) => {
+                let ino = self.inodes.add(Arc::new(parent_path.join(name)));
+                attr.ino = ino;
+                reply.entry(ttl, attr, generation)
+            },
             Err(e) => reply.error(e),
         }
     }
