@@ -159,7 +159,7 @@ pub trait FilesystemMT {
         Err(libc::ENOSYS)
     }
 
-    fn write(&self, _req: RequestInfo, _path: &Path, _fh: u64, _offset: u64, _data: &[u8], _flags: u32) -> ResultWrite {
+    fn write(&self, _req: RequestInfo, _path: &Path, _fh: u64, _offset: u64, _data: Vec<u8>, _flags: u32) -> ResultWrite {
         Err(libc::ENOSYS)
     }
 
@@ -478,11 +478,12 @@ impl<T: FilesystemMT + Sync + Send + 'static> Filesystem for FuseMT<T> {
         let target = self.target.clone();
         let req_info = req.info();
 
-        // TODO: it would be better if rust-fuse gave us the buffer by value so we could avoid this copy
+        // The data needs to be copied here before dispatching to the threadpool because it's a
+        // slice of a single buffer that `rust-fuse` re-uses for the entire session.
         let data_buf = Vec::from(data);
 
         self.threads.execute(move|| {
-            match target.write(req_info, &path, fh, offset, &data_buf, flags) {
+            match target.write(req_info, &path, fh, offset, data_buf, flags) {
                 Ok(written) => reply.written(written),
                 Err(e) => reply.error(e),
             }

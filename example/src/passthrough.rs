@@ -268,7 +268,7 @@ impl FilesystemMT for PassthroughFS {
         Ok(data)
     }
 
-    fn write(&self, _req: RequestInfo, path: &Path, fh: u64, offset: u64, data: &[u8], _flags: u32) -> ResultWrite {
+    fn write(&self, _req: RequestInfo, path: &Path, fh: u64, offset: u64, data: Vec<u8>, _flags: u32) -> ResultWrite {
         debug!("write: {:?} {:#x} @ {:#x}", path, data.len(), offset);
         let mut file = unsafe { UnmanagedFile::new(fh) };
 
@@ -276,7 +276,7 @@ impl FilesystemMT for PassthroughFS {
             error!("seek({:?}, {}): {}", path, offset, e);
             return Err(e.raw_os_error().unwrap());
         }
-        let nwritten: u32 = match file.write(data) {
+        let nwritten: u32 = match file.write(&data) {
             Ok(n) => n as u32,
             Err(e) => {
                 error!("write {:?}, {:#x} @ {:#x}: {}", path, data.len(), offset, e);
