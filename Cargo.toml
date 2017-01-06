@@ -2,7 +2,7 @@
 name = "fuse_mt"
 version = "0.1.2"
 authors = ["William R. Fraser <wfraser@codewise.org>"]
-repository = "https://github.com/wfraser/fuse_mt"
+repository = "https://github.com/wfraser/fuse-mt"
 description = "A higher-level FUSE filesystem library with multi-threading and inode->path translation."
 keywords = ["fuse", "filesystem"]
 license = "MIT/Apache-2.0"
