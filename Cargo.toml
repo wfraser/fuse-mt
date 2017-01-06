@@ -1,6 +1,6 @@
 [package]
 name = "fuse_mt"
-version = "0.1.1"
+version = "0.1.2"
 authors = ["William R. Fraser <wfraser@codewise.org>"]
 repository = "https://github.com/wfraser/fuse_mt"
 description = "A higher-level FUSE filesystem library with multi-threading and inode->path translation."
