@@ -113,6 +113,7 @@ pub trait FilesystemMT {
         Err(libc::ENOSYS)
     }
 
+    #[allow(unknown_lints, too_many_arguments)]
     fn utimens_macos(&self, _req: RequestInfo, _path: &Path, _fh: Option<u64>, _crtime: Option<Timespec>, _chgtime: Option<Timespec>, _bkuptime: Option<Timespec>, _flags: Option<u32>) -> ResultEmpty {
         Err(libc::ENOSYS)
     }
@@ -566,8 +567,7 @@ impl<T: FilesystemMT + Sync + Send + 'static> Filesystem for FuseMT<T> {
                     }
                 };
 
-                let mut index = 0;
-                for entry in entries {
+                for (index, entry) in entries.iter().enumerate() {
                     let entry_inode = if entry.name == Path::new(".") {
                         ino
                     } else if entry.name == Path::new("..") {
@@ -583,7 +583,7 @@ impl<T: FilesystemMT + Sync + Send + 'static> Filesystem for FuseMT<T> {
 
                     let buffer_full: bool = reply.add(
                         entry_inode,
-                        index,
+                        index as u64,
                         entry.kind,
                         entry.name.as_os_str());
 
@@ -591,8 +591,6 @@ impl<T: FilesystemMT + Sync + Send + 'static> Filesystem for FuseMT<T> {
                         debug!("readdir: reply buffer is full");
                         break;
                     }
-
-                    index += 1;
                 }
 
                 reply.ok();

@@ -20,7 +20,7 @@ pub fn opendir(path: OsString) -> Result<u64, libc::c_int> {
         }
     };
 
-    let dir: *mut libc::DIR = unsafe { libc::opendir(mem::transmute(path_c.as_ptr())) };
+    let dir: *mut libc::DIR = unsafe { libc::opendir(path_c.as_ptr()) };
     if dir.is_null() {
         return Err(io::Error::last_os_error().raw_os_error().unwrap());
     }
@@ -29,7 +29,7 @@ pub fn opendir(path: OsString) -> Result<u64, libc::c_int> {
 }
 
 pub fn readdir(fh: u64) -> Result<Option<libc::dirent>, libc::c_int> {
-    let dir: *mut libc::DIR = unsafe { mem::transmute(fh as usize) };
+    let dir = fh as usize as *mut libc::DIR;
     let mut entry: libc::dirent = unsafe { mem::zeroed() };
     let mut result: *mut libc::dirent = ptr::null_mut();
 
@@ -46,7 +46,7 @@ pub fn readdir(fh: u64) -> Result<Option<libc::dirent>, libc::c_int> {
 }
 
 pub fn closedir(fh: u64) -> Result<(), libc::c_int> {
-    let dir: *mut libc::DIR = unsafe { mem::transmute(fh as usize) };
+    let dir = fh as usize as *mut libc::DIR;
     if -1 == unsafe { libc::closedir(dir) } {
         Err(io::Error::last_os_error().raw_os_error().unwrap())
     } else {
@@ -64,7 +64,7 @@ pub fn open(path: OsString, flags: libc::c_int) -> Result<u64, libc::c_int> {
         }
     };
 
-    let fd: libc::c_int = unsafe { libc::open(mem::transmute(path_c.as_ptr()), flags) };
+    let fd: libc::c_int = unsafe { libc::open(path_c.as_ptr(), flags) };
     if fd == -1 {
         return Err(io::Error::last_os_error().raw_os_error().unwrap());
     }
@@ -92,7 +92,7 @@ pub fn lstat(path: OsString) -> Result<libc::stat64, libc::c_int> {
     };
 
     let mut buf: libc::stat64 = unsafe { mem::zeroed() };
-    if -1 == unsafe { libc::lstat64(mem::transmute(path_c.as_ptr()), &mut buf) } {
+    if -1 == unsafe { libc::lstat64(path_c.as_ptr(), &mut buf) } {
         return Err(io::Error::last_os_error().raw_os_error().unwrap());
     }
 
