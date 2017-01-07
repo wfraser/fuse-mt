@@ -3,10 +3,13 @@
 // Copyright (c) 2016 by William R. Fraser
 //
 
-use std::collections::{BTreeMap, VecDeque};
-use std::collections::btree_map::Entry::*;
-use std::sync::Arc;
+use std::borrow::Borrow;
+use std::cmp::{Eq, PartialEq};
+use std::collections::{HashMap, VecDeque};
+use std::collections::hash_map::Entry::*;
+use std::hash::{Hash, Hasher};
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
 pub type Inode = u64;
 pub type LookupCount = u64;
@@ -22,7 +25,7 @@ struct InodeTableEntry {
 pub struct InodeTable {
     table: Vec<Option<InodeTableEntry>>,
     free_list: VecDeque<usize>,
-    by_path: BTreeMap<Arc<PathBuf>, usize>,
+    by_path: HashMap<Arc<PathBuf>, usize>,
 }
 
 impl InodeTable {
@@ -37,7 +40,7 @@ impl InodeTable {
         let mut inode_table = InodeTable {
             table: Vec::new(),
             free_list: VecDeque::new(),
-            by_path: BTreeMap::new()
+            by_path: HashMap::new()
         };
         let root = Arc::new(PathBuf::from("/"));
         inode_table.table.push(Some(InodeTableEntry {
@@ -209,28 +212,22 @@ impl Pathish {
     }
 }
 
-impl ::std::borrow::Borrow<Pathish> for Arc<PathBuf> {
+impl Borrow<Pathish> for Arc<PathBuf> {
     fn borrow(&self) -> &Pathish {
         Pathish::new(self.as_path())
     }
 }
 
-impl ::std::cmp::Ord for Pathish {
-    fn cmp(&self, other: &Self) -> ::std::cmp::Ordering {
-        self.inner.cmp(&other.inner)
+impl Hash for Pathish {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.inner.hash(state);
     }
 }
 
-impl ::std::cmp::PartialOrd for Pathish {
-    fn partial_cmp(&self, other: &Pathish) -> Option<::std::cmp::Ordering> {
-        self.inner.partial_cmp(&other.inner)
-    }
+impl Eq for Pathish {
 }
 
-impl ::std::cmp::Eq for Pathish {
-}
-
-impl ::std::cmp::PartialEq for Pathish {
+impl PartialEq for Pathish {
     fn eq(&self, other: &Pathish) -> bool {
         self.inner.eq(&other.inner)
     }
