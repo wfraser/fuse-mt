@@ -185,7 +185,7 @@ impl FilesystemMT for PassthroughFS {
             match libc_wrappers::readdir(fh) {
                 Ok(Some(entry)) => {
                     let name_c = unsafe { CStr::from_ptr(entry.d_name.as_ptr()) };
-                    let name_path = PathBuf::from(OsStr::from_bytes(name_c.to_bytes()));
+                    let name = OsStr::from_bytes(name_c.to_bytes()).to_owned();
 
                     let filetype = match entry.d_type {
                         libc::DT_DIR => FileType::Directory,
@@ -199,7 +199,7 @@ impl FilesystemMT for PassthroughFS {
                             FileType::NamedPipe
                         },
                         0 | _ => {
-                            let entry_path = PathBuf::from(path).join(&name_path);
+                            let entry_path = PathBuf::from(path).join(&name);
                             let real_path = self.real_path(&entry_path);
                             match libc_wrappers::lstat(real_path) {
                                 Ok(stat64) => mode_to_filetype(stat64.st_mode),
@@ -213,7 +213,7 @@ impl FilesystemMT for PassthroughFS {
                     };
 
                     entries.push(DirectoryEntry {
-                        name: name_path,
+                        name: name,
                         kind: filetype,
                     })
                 },

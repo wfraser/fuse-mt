@@ -4,7 +4,7 @@
 // Copyright (c) 2016 by William R. Fraser
 //
 
-use std::ffi::OsStr;
+use std::ffi::{OsStr, OsString};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
@@ -38,7 +38,7 @@ impl<'a> IntoRequestInfo for Request<'a> {
 }
 
 pub struct DirectoryEntry {
-    pub name: PathBuf,
+    pub name: OsString,
     pub kind: FileType,
 }
 
