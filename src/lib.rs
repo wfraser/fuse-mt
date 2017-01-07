@@ -6,6 +6,7 @@ extern crate time;
 #[macro_use]
 extern crate log;
 
+mod directory_cache;
 mod fusemt;
 mod inode_table;
 

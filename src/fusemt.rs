@@ -13,6 +13,7 @@ use libc;
 use threadpool::ThreadPool;
 use time::Timespec;
 
+use directory_cache::*;
 use inode_table::*;
 
 pub struct RequestInfo {
@@ -180,7 +181,7 @@ pub trait FilesystemMT {
         Err(libc::ENOSYS)
     }
 
-    fn readdir(&self, _req: RequestInfo, _path: &Path, _fh: u64, _offset: u64) -> ResultReaddir {
+    fn readdir(&self, _req: RequestInfo, _path: &Path, _fh: u64) -> ResultReaddir {
         Err(libc::ENOSYS)
     }
 
@@ -229,6 +230,7 @@ pub struct FuseMT<T> {
     target: Arc<T>,
     inodes: InodeTable,
     threads: ThreadPool,
+    directory_cache: DirectoryCache,
 }
 
 impl<T: FilesystemMT + Sync + Send + 'static> FuseMT<T> {
@@ -237,6 +239,7 @@ impl<T: FilesystemMT + Sync + Send + 'static> FuseMT<T> {
             target: Arc::new(target_fs),
             inodes: InodeTable::new(),
             threads: ThreadPool::new(num_threads),
+            directory_cache: DirectoryCache::new(),
         }
     }
 }
@@ -543,7 +546,10 @@ impl<T: FilesystemMT + Sync + Send + 'static> Filesystem for FuseMT<T> {
         let path = get_path!(self, ino, reply);
         debug!("opendir: {:?}", path);
         match self.target.opendir(req.info(), &path, flags) {
-            Ok((fh, flags)) => reply.opened(fh, flags),
+            Ok((fh, flags)) => {
+                let dcache_key = self.directory_cache.new_entry(fh);
+                reply.opened(dcache_key, flags);
+            },
             Err(e) => reply.error(e),
         }
     }
@@ -551,67 +557,87 @@ impl<T: FilesystemMT + Sync + Send + 'static> Filesystem for FuseMT<T> {
     fn readdir(&mut self, req: &Request, ino: u64, fh: u64, offset: u64, mut reply: ReplyDirectory) {
         let path = get_path!(self, ino, reply);
         debug!("readdir: {:?} @ {}", path, offset);
-        match self.target.readdir(req.info(), &path, fh, offset) {
-            Ok(entries) => {
-                let parent_inode = if ino == 1 {
-                    ino
-                } else {
-                    let parent_path: &Path = path.parent().unwrap();
-                    match self.inodes.get_inode(parent_path) {
-                        Some(inode) => inode,
-                        None => {
-                            error!("readdir: unable to get inode for parent of {:?}", path);
-                            reply.error(libc::EIO);
-                            return;
-                        }
-                    }
-                };
 
-                for (index, entry) in entries.iter().enumerate() {
-                    let entry_inode = if entry.name == Path::new(".") {
-                        ino
-                    } else if entry.name == Path::new("..") {
-                        parent_inode
-                    } else {
-                        // Don't bother looking in the inode table for the entry; FUSE doesn't pre-
-                        // populate its inode cache with this value, so subsequent access to these
-                        // files is going to involve it issuing a LOOKUP operation anyway.
-                        !(1 as Inode)
-                    };
-
-                    debug!("readdir: adding entry #{}, {:?}", index, entry.name);
-
-                    let buffer_full: bool = reply.add(
-                        entry_inode,
-                        index as u64,
-                        entry.kind,
-                        entry.name.as_os_str());
-
-                    if buffer_full {
-                        debug!("readdir: reply buffer is full");
-                        break;
+        let entries: &[DirectoryEntry] = {
+            let dcache_entry = self.directory_cache.get_mut(fh);
+            if let Some(ref entries) = dcache_entry.entries {
+                entries
+            } else {
+                debug!("entries not yet fetched; requesting with fh {}", dcache_entry.fh);
+                match self.target.readdir(req.info(), &path, dcache_entry.fh) {
+                    Ok(entries) => {
+                        dcache_entry.entries = Some(entries);
+                        dcache_entry.entries.as_ref().unwrap()
+                    },
+                    Err(e) => {
+                        reply.error(e);
+                        return;
                     }
                 }
+            }
+        };
 
-                reply.ok();
-            },
-            Err(e) => reply.error(e),
+        let parent_inode = if ino == 1 {
+            ino
+        } else {
+            let parent_path: &Path = path.parent().unwrap();
+            match self.inodes.get_inode(parent_path) {
+                Some(inode) => inode,
+                None => {
+                    error!("readdir: unable to get inode for parent of {:?}", path);
+                    reply.error(libc::EIO);
+                    return;
+                }
+            }
+        };
+
+        debug!("directory has {} entries", entries.len());
+
+        for (index, entry) in entries.iter().skip(offset as usize).enumerate() {
+            let entry_inode = if entry.name == Path::new(".") {
+                ino
+            } else if entry.name == Path::new("..") {
+                parent_inode
+            } else {
+                // Don't bother looking in the inode table for the entry; FUSE doesn't pre-
+                // populate its inode cache with this value, so subsequent access to these
+                // files is going to involve it issuing a LOOKUP operation anyway.
+                !(1 as Inode)
+            };
+
+            debug!("readdir: adding entry #{}, {:?}", offset + index as u64, entry.name);
+
+            let buffer_full: bool = reply.add(
+                entry_inode,
+                offset + index as u64 + 1,
+                entry.kind,
+                entry.name.as_os_str());
+
+            if buffer_full {
+                debug!("readdir: reply buffer is full");
+                break;
+            }
         }
+
+        reply.ok();
     }
 
     fn releasedir(&mut self, req: &Request, ino: u64, fh: u64, flags: u32, reply: ReplyEmpty) {
         let path = get_path!(self, ino, reply);
         debug!("releasedir: {:?}", path);
-        match self.target.releasedir(req.info(), &path, fh, flags) {
+        let real_fh = self.directory_cache.real_fh(fh);
+        match self.target.releasedir(req.info(), &path, real_fh, flags) {
             Ok(()) => reply.ok(),
             Err(e) => reply.error(e),
         }
+        self.directory_cache.delete(fh);
     }
 
     fn fsyncdir(&mut self, req: &Request, ino: u64, fh: u64, datasync: bool, reply: ReplyEmpty) {
         let path = get_path!(self, ino, reply);
         debug!("fsyncdir: {:?} (datasync: {:?})", path, datasync);
-        match self.target.fsyncdir(req.info(), &path, fh, datasync) {
+        let real_fh = self.directory_cache.real_fh(fh);
+        match self.target.fsyncdir(req.info(), &path, real_fh, datasync) {
             Ok(()) => reply.ok(),
             Err(e) => reply.error(e),
         }
