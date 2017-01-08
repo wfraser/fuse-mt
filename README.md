@@ -1,5 +1,8 @@
 # FUSE-MT
 
+[![Build Status](https://travis-ci.org/wfraser/fuse-mt.svg?branch=master)](https://travis-ci.org/wfraser/fuse-mt)
+[![Crates.io](https://img.shields.io/crates/v/fuse_mt.svg)](https://crates.io/crates/fuse_mt)
+
 This code is a wrapper on top of the Rust FUSE crate with the following additions:
 * Dispatch system calls on multiple threads, so that e.g. I/O doesn't block directory listing.
 * Translate inodes into paths, to simplify filesystem implementation.
