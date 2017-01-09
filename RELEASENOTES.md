@@ -1,3 +1,10 @@
+v0.2.1: 2017-01-09
+  * Added lots of documentation.
+  * Implemented `access`, `setxattr`
+  * Delay threadpool creation until it is actually used.
+  * Added `setxattr`, `removexattr` in passthrufs.
+  * Build fixes for MacOS.
+
 v0.2.0: 2017-01-06
   * Merged the `lookup-refcount` branch.
       * The inode table no longer grows without bound. :)
