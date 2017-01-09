@@ -443,7 +443,8 @@ pub trait FilesystemMT {
 pub struct FuseMT<T> {
     target: Arc<T>,
     inodes: InodeTable,
-    threads: ThreadPool,
+    threads: Option<ThreadPool>,
+    num_threads: usize,
     directory_cache: DirectoryCache,
 }
 
@@ -452,9 +453,18 @@ impl<T: FilesystemMT + Sync + Send + 'static> FuseMT<T> {
         FuseMT {
             target: Arc::new(target_fs),
             inodes: InodeTable::new(),
-            threads: ThreadPool::new(num_threads),
+            threads: None,
+            num_threads: num_threads,
             directory_cache: DirectoryCache::new(),
         }
+    }
+
+    fn threadpool(&mut self) -> &ThreadPool {
+        if self.threads.is_none() {
+            debug!("initializing threadpool with {} threads", self.num_threads);
+            self.threads = Some(ThreadPool::new(self.num_threads));
+        }
+        self.threads.as_ref().unwrap()
     }
 }
 
@@ -697,7 +707,7 @@ impl<T: FilesystemMT + Sync + Send + 'static> Filesystem for FuseMT<T> {
         debug!("read: {:?} {:#x} @ {:#x}", path, size, offset);
         let target = self.target.clone();
         let req_info = req.info();
-        self.threads.execute(move|| {
+        self.threadpool().execute(move|| {
             match target.read(req_info, &path, fh, offset, size) {
                 Ok(ref data) => reply.data(data),
                 Err(e) => reply.error(e),
@@ -715,7 +725,7 @@ impl<T: FilesystemMT + Sync + Send + 'static> Filesystem for FuseMT<T> {
         // slice of a single buffer that `rust-fuse` re-uses for the entire session.
         let data_buf = Vec::from(data);
 
-        self.threads.execute(move|| {
+        self.threadpool().execute(move|| {
             match target.write(req_info, &path, fh, offset, data_buf, flags) {
                 Ok(written) => reply.written(written),
                 Err(e) => reply.error(e),
@@ -728,7 +738,7 @@ impl<T: FilesystemMT + Sync + Send + 'static> Filesystem for FuseMT<T> {
         debug!("flush: {:?}", path);
         let target = self.target.clone();
         let req_info = req.info();
-        self.threads.execute(move|| {
+        self.threadpool().execute(move|| {
             match target.flush(req_info, &path, fh, lock_owner) {
                 Ok(()) => reply.ok(),
                 Err(e) => reply.error(e),
@@ -750,7 +760,7 @@ impl<T: FilesystemMT + Sync + Send + 'static> Filesystem for FuseMT<T> {
         debug!("fsync: {:?}", path);
         let target = self.target.clone();
         let req_info = req.info();
-        self.threads.execute(move|| {
+        self.threadpool().execute(move|| {
             match target.fsync(req_info, &path, fh, datasync) {
                 Ok(()) => reply.ok(),
                 Err(e) => reply.error(e),
