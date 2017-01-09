@@ -9,12 +9,13 @@ rust:
 matrix:
     allow_failures:
         - rust: nightly
-before_install:
-    - sudo apt-get -qq update
-    - sudo apt-get install -y libfuse-dev
+install:
+    - if [ "$TRAVIS_OS_NAME" == "linux" ]; then sudo apt-get -qq update && sudo apt-get install -y libfuse-dev; fi
+    - if [ "$TRAVIS_OS_NAME" == "osx" ]; then brew update && brew tap caskroom/cask && brew cask install osxfuse; fi
 script:
     - cargo build
     - cargo test
+    - cargo doc --no-deps
     - cd example
     - cargo build
     - cargo test
