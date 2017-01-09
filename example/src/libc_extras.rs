@@ -30,8 +30,11 @@ pub mod libc {
         #[cfg(target_os = "macos")]
         pub fn getxattr(path: *const c_char, name: *const c_char, value: *mut c_void, size: size_t, position: u32, options: c_int) -> ssize_t;
 
-        #[cfg(target_os = "lsetxattr")]
+        #[cfg(target_os = "macos")]
         pub fn setxattr(path: *const c_char, name: *const c_char, value: *mut c_void, size: size_t, flags: c_int, position: u32) -> ssize_t;
+
+        #[cfg(target_os = "macos")]
+        pub fn removexattr(path: *const c_char, name: *const c_char, flags: c_int) -> c_int;
     }
 
     //
@@ -183,5 +186,10 @@ pub mod libc {
     #[cfg(target_os = "macos")]
     pub unsafe fn lsetxattr(path: *const c_char, name: *const c_char, value: *const c_void, size: size_t, flags: c_int, position: u32) -> ssize_t {
         setxattr(path, name, value, size, flags, XATTR_NOFOLLOW, position)
+    }
+
+    #[cfg(target_os = "macos")]
+    pub unsafe fn lremovexattr(path: *const c_char, name: *const c_char) -> libc::c_int {
+        removexattr(path, name, XATTR_NOFOLLOW)
     }
 }

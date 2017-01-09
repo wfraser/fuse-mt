@@ -657,6 +657,12 @@ impl FilesystemMT for PassthroughFS {
         let real = self.real_path(path);
         libc_wrappers::lsetxattr(real, name.to_owned(), value, flags, position)
     }
+
+    fn removexattr(&self, _req: RequestInfo, path: &Path, name: &OsStr) -> ResultEmpty {
+        debug!("removexattr: {:?} {:?}", path, name);
+        let real = self.real_path(path);
+        libc_wrappers::lremovexattr(real, name.to_owned())
+    }
 }
 
 /// A file that is not closed upon leaving scope.
