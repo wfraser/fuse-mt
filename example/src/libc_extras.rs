@@ -184,12 +184,12 @@ pub mod libc {
     }
 
     #[cfg(target_os = "macos")]
-    pub unsafe fn lsetxattr(path: *const c_char, name: *const c_char, value: *const c_void, size: size_t, flags: c_int, position: u32) -> ssize_t {
+    pub unsafe fn lsetxattr(path: *const c_char, name: *const c_char, value: *const c_void, size: size_t, flags: c_int, position: u32) -> c_int {
         setxattr(path, name, value, size, flags, XATTR_NOFOLLOW, position)
     }
 
     #[cfg(target_os = "macos")]
-    pub unsafe fn lremovexattr(path: *const c_char, name: *const c_char) -> libc::c_int {
+    pub unsafe fn lremovexattr(path: *const c_char, name: *const c_char) -> c_int {
         removexattr(path, name, XATTR_NOFOLLOW)
     }
 }
