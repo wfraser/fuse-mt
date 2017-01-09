@@ -155,3 +155,54 @@ pub fn lgetxattr(path: OsString, name: OsString, buf: &mut [u8]) -> Result<usize
         nbytes => Ok(nbytes as usize),
     }
 }
+
+pub fn lsetxattr(path: OsString, name: OsString, value: &[u8], flags: u32, position: u32) -> Result<(), libc::c_int> {
+    let path_c = match CString::new(path.into_vec()) {
+        Ok(s) => s,
+        Err(e) => {
+            error!("lsetxattr: path {:?} contains interior NUL byte",
+                   OsString::from_vec(e.into_vec()));
+            return Err(libc::EINVAL);
+        }
+    };
+
+    let name_c = match CString::new(name.into_vec()) {
+        Ok(s) => s,
+        Err(e) => {
+            error!("lsetxattr: attr name {:?} contains interior NUL byte",
+                   OsString::from_vec(e.into_vec()));
+            return Err(libc::EINVAL);
+        }
+    };
+
+    // MacOS obnoxiously has an non-standard parameter at the end of their lsetxattr...
+    #[cfg(target_os = "macos")]
+    unsafe fn real(path: *const libc::c_char, name: *const libc::c_char,
+                   value: *const libc::c_void, size: libc::size_t, flags: libc::c_int,
+                   position: u32) -> libc::c_int {
+        libc::lsetxattr(path, name, value, size, flags, position)
+    }
+
+    #[cfg(not(target_os = "macos"))]
+    unsafe fn real(path: *const libc::c_char, name: *const libc::c_char,
+                   value: *const libc::c_void, size: libc::size_t, flags: libc::c_int,
+                   _position: u32) -> libc::c_int {
+        libc::lsetxattr(path, name, value, size, flags)
+    }
+
+    if cfg!(not(target_os = "macos")) && position != 0 {
+        error!("lsetxattr: position != 0 is only supported on MacOS");
+        return Err(libc::EINVAL);
+    }
+
+    let result = unsafe {
+        real(path_c.as_ptr(), name_c.as_ptr(), mem::transmute(value.as_ptr()),
+             value.len(), flags as libc::c_int, position)
+    };
+
+    if result == -1 {
+        Err(io::Error::last_os_error().raw_os_error().unwrap())
+    } else {
+        Ok(())
+    }
+}

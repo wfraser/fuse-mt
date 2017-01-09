@@ -651,6 +651,12 @@ impl FilesystemMT for PassthroughFS {
             Ok(Xattr::Size(nbytes as u32))
         }
     }
+
+    fn setxattr(&self, _req: RequestInfo, path: &Path, name: &OsStr, value: &[u8], flags: u32, position: u32) -> ResultEmpty {
+        debug!("setxattr: {:?} {:?} {} bytes, flags = {:#x}, pos = {}", path, name, value.len(), flags, position);
+        let real = self.real_path(path);
+        libc_wrappers::lsetxattr(real, name.to_owned(), value, flags, position)
+    }
 }
 
 /// A file that is not closed upon leaving scope.
