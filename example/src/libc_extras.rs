@@ -23,9 +23,6 @@ pub mod libc {
         #[cfg(target_os = "linux")]
         pub fn truncate64(path: *const c_char, size: off64_t) -> c_int;
 
-        #[cfg(target_os = "macos")]
-        pub fn lutimes(path: *const c_char, times: *const timeval) -> c_int;
-
         // These XATTR functions are missing from the libc crate on Darwin for some reason.
         #[cfg(target_os = "macos")]
         pub fn listxattr(path: *const c_char, list: *mut c_char, size: size_t, options: c_int) -> ssize_t;
