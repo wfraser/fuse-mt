@@ -409,7 +409,16 @@ pub trait FilesystemMT {
         Err(libc::ENOSYS)
     }
 
-    // access
+    /// Check for access to a file.
+    ///
+    /// * `path`: path to the file.
+    /// * `mask`: mode bits to check for access to.
+    ///
+    /// Return `Ok(())` if all requested permissions are allowed, otherwise return `Err(EACCESS)`
+    /// or other error code as appropriate (e.g. `ENOENT` if the file doesn't exist).
+    fn access(&self, _req: RequestInfo, _path: &Path, _mask: u32) -> ResultEmpty {
+        Err(libc::ENOSYS)
+    }
 
     /// Create and open a new file.
     ///
@@ -487,7 +496,9 @@ impl<T: FilesystemMT + Sync + Send + 'static> Filesystem for FuseMT<T> {
     }
 
     fn forget(&mut self, _req: &Request, ino: u64, nlookup: u64) {
-        let path = self.inodes.get_path(ino).unwrap();
+        let path = self.inodes.get_path(ino).unwrap_or_else(|| {
+            Arc::new(PathBuf::from("[unknown]"))
+        });
         let lookups = self.inodes.forget(ino, nlookup);
         debug!("forget: inode {} ({:?}) now at {} lookups", ino, path, lookups);
     }
@@ -869,7 +880,14 @@ impl<T: FilesystemMT + Sync + Send + 'static> Filesystem for FuseMT<T> {
         }
     }
 
-    // setxattr
+    fn setxattr(&mut self, req: &Request, ino: u64, name: &OsStr, value: &[u8], flags: u32, position: u32, reply: ReplyEmpty) {
+        let path = get_path!(self, ino, reply);
+        debug!("setxattr: {:?} {:?} ({} bytes, flags={:#x}, pos={:#x}", path, name, value.len(), flags, position);
+        match self.target.setxattr(req.info(), &path, name, value, flags, position) {
+            Ok(()) => reply.ok(),
+            Err(e) => reply.error(e),
+        }
+    }
 
     fn getxattr(&mut self, req: &Request, ino: u64, name: &OsStr, size: u32, reply: ReplyXattr) {
         let path = if ino == 1 {
@@ -916,9 +934,23 @@ impl<T: FilesystemMT + Sync + Send + 'static> Filesystem for FuseMT<T> {
         }
     }
 
-    // removexattr
+    fn removexattr(&mut self, req: &Request, ino: u64, name: &OsStr, reply: ReplyEmpty) {
+        let path = get_path!(self, ino, reply);
+        debug!("removexattr: {:?}, {:?}", path, name);
+        match self.target.removexattr(req.info(), &path, name) {
+            Ok(()) => reply.ok(),
+            Err(e) => reply.error(e),
+        }
+    }
 
-    // access
+    fn access(&mut self, req: &Request, ino: u64, mask: u32, reply: ReplyEmpty) {
+        let path = get_path!(self, ino, reply);
+        debug!("access: {:?}, mask={:#o}", path, mask);
+        match self.target.access(req.info(), &path, mask) {
+            Ok(()) => reply.ok(),
+            Err(e) => reply.error(e),
+        }
+    }
 
     fn create(&mut self, req: &Request, parent: u64, name: &OsStr, mode: u32, flags: u32, reply: ReplyCreate) {
         let parent_path = get_path!(self, parent, reply);

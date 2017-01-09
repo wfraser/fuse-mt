@@ -156,7 +156,7 @@ impl FilesystemMT for PassthroughFS {
 
     fn opendir(&self, _req: RequestInfo, path: &Path, _flags: u32) -> ResultOpen {
         let real = self.real_path(path);
-        debug!("opendir: {:?}", real);
+        debug!("opendir: {:?} (flags = {:#o})", real, _flags);
         match libc_wrappers::opendir(real) {
             Ok(fh) => Ok((fh, 0)),
             Err(e) => {
