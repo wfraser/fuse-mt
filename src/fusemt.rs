@@ -900,12 +900,7 @@ impl<T: FilesystemMT + Sync + Send + 'static> Filesystem for FuseMT<T> {
     }
 
     fn getxattr(&mut self, req: &Request, ino: u64, name: &OsStr, size: u32, reply: ReplyXattr) {
-        let path = if ino == 1 {
-            Arc::new(PathBuf::from("/"))
-        } else {
-            get_path!(self, ino, reply)
-        };
-
+        let path = get_path!(self, ino, reply);
         debug!("getxattr: {:?} {:?}", path, name);
         match self.target.getxattr(req.info(), &path, name, size) {
             Ok(Xattr::Size(size)) => {
@@ -924,12 +919,7 @@ impl<T: FilesystemMT + Sync + Send + 'static> Filesystem for FuseMT<T> {
     }
 
     fn listxattr(&mut self, req: &Request, ino: u64, size: u32, reply: ReplyXattr) {
-        let path = if ino == 1 {
-            Arc::new(PathBuf::from("/"))
-        } else {
-            get_path!(self, ino, reply)
-        };
-
+        let path = get_path!(self, ino, reply);
         debug!("listxattr: {:?}", path);
         match self.target.listxattr(req.info(), &path, size) {
             Ok(Xattr::Size(size)) => {
