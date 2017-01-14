@@ -1,7 +1,7 @@
 // libc_extras :: Functions missing from the libc crate and wrappers for better cross-platform
 //                compatibility.
 //
-// Copyright (c) 2016 by William R. Fraser
+// Copyright (c) 2016-2017 by William R. Fraser
 //
 
 pub mod libc {

@@ -2,7 +2,7 @@
 //
 // Implemented using fuse_mt::FilesystemMT.
 //
-// Copyright (c) 2016 by William R. Fraser
+// Copyright (c) 2016-2017 by William R. Fraser
 //
 
 use std::ffi::{CStr, CString, OsStr, OsString};

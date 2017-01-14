@@ -1,6 +1,6 @@
 // InodeTable :: a bi-directional map of paths to inodes.
 //
-// Copyright (c) 2016 by William R. Fraser
+// Copyright (c) 2016-2017 by William R. Fraser
 //
 
 use std::borrow::Borrow;

@@ -10,6 +10,10 @@
 //! be implemented -- the default behavior is to return `ENOSYS` ("Function not implemented"). For
 //! example, a read-only filesystem can skip implementing the `write` call and many others.
 
+//
+// Copyright (c) 2016-2017 by William R. Fraser
+//
+
 extern crate fuse;
 extern crate libc;
 extern crate threadpool;

@@ -1,6 +1,6 @@
 // Main Entry Point :: A fuse_mt test program.
 //
-// Copyright (c) 2016 by William R. Fraser
+// Copyright (c) 2016-2017 by William R. Fraser
 //
 
 use std::env;

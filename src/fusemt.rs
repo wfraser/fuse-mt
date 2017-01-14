@@ -1,7 +1,7 @@
 // FuseMT :: A wrapper around FUSE that presents paths instead of inodes and dispatches I/O
 //           operations to multiple threads.
 //
-// Copyright (c) 2016 by William R. Fraser
+// Copyright (c) 2016-2017 by William R. Fraser
 //
 
 use std::ffi::{OsStr, OsString};
