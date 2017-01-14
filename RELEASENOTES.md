@@ -1,3 +1,7 @@
+v0.2.2: 2017-01-13
+  * fixed a build error on 32-bit Linux.
+  * added a `VERSION` public const string with the fuse_mt package version.
+
 v0.2.1: 2017-01-09
   * Added lots of documentation.
   * Implemented `access`, `setxattr`
