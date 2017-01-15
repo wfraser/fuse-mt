@@ -12,18 +12,20 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 pub type Inode = u64;
+pub type Generation = u64;
 pub type LookupCount = u64;
 
 #[derive(Debug)]
 struct InodeTableEntry {
-    path: Arc<PathBuf>,
+    path: Option<Arc<PathBuf>>,
     lookups: LookupCount,
+    generation: Generation,
 }
 
 /// A data structure for mapping paths to inodes and vice versa.
 #[derive(Debug)]
 pub struct InodeTable {
-    table: Vec<Option<InodeTableEntry>>,
+    table: Vec<InodeTableEntry>,
     free_list: VecDeque<usize>,
     by_path: HashMap<Arc<PathBuf>, usize>,
 }
@@ -43,10 +45,11 @@ impl InodeTable {
             by_path: HashMap::new()
         };
         let root = Arc::new(PathBuf::from("/"));
-        inode_table.table.push(Some(InodeTableEntry {
-            path: root.clone(),
+        inode_table.table.push(InodeTableEntry {
+            path: Some(root.clone()),
             lookups: 0, // not used for this entry; root is always present.
-        }));
+            generation: 0,
+        });
         inode_table.by_path.insert(root, 0);
         inode_table
     }
@@ -60,22 +63,20 @@ impl InodeTable {
     /// The path is added with an initial lookup count of 1.
     ///
     /// This operation runs in O(log n) time.
-    pub fn add(&mut self, path: Arc<PathBuf>) -> Inode {
-        let idx = self.free_list.pop_front().unwrap_or_else(|| {
-            self.table.push(None);
-            self.table.len() - 1
-        });
-        self.table[idx] = Some(InodeTableEntry {
-            path: path.clone(),
-            lookups: 1,
-        });
-        debug!("explicitly adding {} -> {:?} with 1 lookups", idx+1, path);
-        let previous = self.by_path.insert(path, idx);
+    pub fn add(&mut self, path: Arc<PathBuf>) -> (Inode, Generation) {
+        let (inode, generation) = {
+            let (inode, entry) = Self::get_inode_entry(&mut self.free_list, &mut self.table);
+            entry.path = Some(path.clone());
+            entry.lookups = 1;
+            (inode, entry.generation)
+        };
+        debug!("explicitly adding {} -> {:?} with 1 lookups", inode, path);
+        let previous = self.by_path.insert(path, inode as usize - 1);
         if previous.is_some() {
             error!("inode table buggered: {:?}", self);
             panic!("attempted to insert duplicate path into inode table: {:?}", previous.unwrap());
         }
-        (idx + 1) as Inode
+        (inode, generation)
     }
 
     /// Add a path to the inode table if it does not yet exist.
@@ -85,23 +86,19 @@ impl InodeTable {
     /// If the path was not in the table, it is added with an initial lookup count of 0.
     ///
     /// This operation runs in O(log n) time.
-    pub fn add_or_get(&mut self, path: Arc<PathBuf>) -> Inode {
+    pub fn add_or_get(&mut self, path: Arc<PathBuf>) -> (Inode, Generation) {
         match self.by_path.entry(path.clone()) {
-            Vacant(entry) => {
-                let table_ref = &mut self.table;
-                let idx = self.free_list.pop_front().unwrap_or_else(|| {
-                    table_ref.push(None);
-                    table_ref.len() - 1
-                });
-                debug!("adding {} -> {:?} with 0 lookups", idx+1, path);
-                table_ref[idx] = Some(InodeTableEntry {
-                    path: path,
-                    lookups: 0,    // lookup must be done later
-                });
-                entry.insert(idx);
-                (idx + 1) as Inode
+            Vacant(path_entry) => {
+                let (inode, entry) = Self::get_inode_entry(&mut self.free_list, &mut self.table);
+                debug!("adding {} -> {:?} with 0 lookups", inode, path);
+                entry.path = Some(path);
+                path_entry.insert(inode as usize - 1);
+                (inode, entry.generation)
             },
-            Occupied(entry) => (entry.get() + 1) as Inode
+            Occupied(path_entry) => {
+                let idx = path_entry.get();
+                ((idx + 1) as Inode, self.table[*idx].generation)
+            }
         }
     }
 
@@ -113,8 +110,8 @@ impl InodeTable {
     /// This operation runs in O(1) time.
     pub fn get_path(&self, inode: Inode) -> Option<Arc<PathBuf>> {
         let idx = inode as usize - 1;
-        match self.table[idx] {
-            Some(ref entry) => Some(entry.path.clone()),
+        match self.table[idx].path {
+            Some(ref path) => Some(path.clone()),
             None => None,
         }
     }
@@ -140,9 +137,9 @@ impl InodeTable {
             return;
         }
 
-        let entry = self.table[inode as usize - 1].as_mut().unwrap();
-        debug!("lookups on {} -> {:?} now {}", inode, entry.path, entry.lookups + 1);
+        let ref mut entry = self.table[inode as usize - 1];
         entry.lookups += 1;
+        debug!("lookups on {} -> {:?} now {}", inode, entry.path, entry.lookups);
     }
 
     /// Decrement the lookup count on a given inode by the given number.
@@ -166,21 +163,20 @@ impl InodeTable {
         let idx = inode as usize - 1;
 
         {
-            let entry = self.table[idx].as_mut().unwrap();
+            let ref mut entry = self.table[idx];
             println!("forget entry {:?}", entry);
             assert!(n <= entry.lookups);
             entry.lookups -= n;
             lookups = entry.lookups;
             if lookups == 0 {
                 delete = true;
-                self.by_path.remove(&*entry.path);
+                self.by_path.remove(&*entry.path.as_ref().unwrap());
             }
         }
 
         if delete {
-            self.table[idx] = None;
+            self.table[idx].path = None;
             self.free_list.push_back(idx);
-            // TODO: we should keep track of the inode generation and bump it when re-using inodes
         }
 
         lookups
@@ -190,7 +186,7 @@ impl InodeTable {
     /// Lookup counts remain unchanged, even if this is replacing another file.
     pub fn rename(&mut self, oldpath: &Path, newpath: Arc<PathBuf>) {
         let idx = self.by_path.remove(Pathish::new(oldpath)).unwrap();
-        self.table[idx].as_mut().unwrap().path = newpath.clone();
+        self.table[idx].path = Some(newpath.clone());
         self.by_path.insert(newpath, idx); // this can replace a path with a new inode
     }
 
@@ -198,6 +194,32 @@ impl InodeTable {
     pub fn unlink(&mut self, path: &Path) {
         self.by_path.remove(Pathish::new(path));
         // Note that the inode->path mapping remains.
+    }
+
+    /// Get a free indode table entry and its number, either by allocating a new one, or re-using
+    /// one that had its lookup count previously go to zero.
+    ///
+    /// 1st arg should be `&mut self.free_list`; 2nd arg should be `&mut self.table`.
+    /// This function's signature is like this instead of taking &mut self so that it can avoid
+    /// mutably borrowing *all* fields of self when we only need those two.
+    fn get_inode_entry<'a>(free_list: &mut VecDeque<usize>, table: &'a mut Vec<InodeTableEntry>)
+            -> (Inode, &'a mut InodeTableEntry) {
+        let idx = match free_list.pop_front() {
+            Some(idx) => {
+                debug!("re-using inode {}", idx + 1);
+                table[idx].generation += 1;
+                idx
+            },
+            None => {
+                table.push(InodeTableEntry {
+                    path: None,
+                    lookups: 0,
+                    generation: 0,
+                });
+                table.len() - 1
+            }
+        };
+        ((idx + 1) as Inode, table.get_mut(idx).unwrap())
     }
 }
 
