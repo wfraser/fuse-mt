@@ -232,3 +232,79 @@ impl PartialEq for Pathish {
         self.inner.eq(&other.inner)
     }
 }
+
+#[test]
+fn test_inode_reuse() {
+    let mut table = InodeTable::new();
+    let path1 = Arc::new(PathBuf::from("/foo/a"));
+    let path2 = Arc::new(PathBuf::from("/foo/b"));
+
+    let inode1 = table.add(path1.clone());
+    assert!(inode1 != 1);
+    assert_eq!(*path1, *table.get_path(inode1).unwrap());
+
+    let inode2 = table.add(path2.clone());
+    assert!(inode2 != inode1);
+    assert!(inode2 != 1);
+    assert_eq!(*path2, *table.get_path(inode2).unwrap());
+
+    assert_eq!(0, table.forget(inode1, 1));
+    assert!(table.get_path(inode1).is_none());
+
+    let inode3 = table.add(Arc::new(PathBuf::from("/foo/c")));
+    assert_eq!(inode1, inode3);
+
+    assert_eq!(Path::new("/foo/c"), *table.get_path(inode3).unwrap());
+}
+
+#[test]
+fn test_add_or_get() {
+    let mut table = InodeTable::new();
+    let path1 = Arc::new(PathBuf::from("/foo/a"));
+    let path2 = Arc::new(PathBuf::from("/foo/b"));
+
+    let inode1 = table.add_or_get(path1.clone());
+    assert_eq!(*path1, *table.get_path(inode1).unwrap());
+    table.lookup(inode1);
+
+    let inode2 = table.add(path2.clone());
+    assert_eq!(*path2, *table.get_path(inode2).unwrap());
+    assert_eq!(inode2, table.add_or_get(path2.clone()));
+    table.lookup(inode2);
+
+    assert_eq!(0, table.forget(inode1, 1));
+    assert_eq!(1, table.forget(inode2, 1));
+}
+
+#[test]
+fn test_inode_rename() {
+    let mut table = InodeTable::new();
+    let path1 = Arc::new(PathBuf::from("/foo/a"));
+    let path2 = Arc::new(PathBuf::from("/foo/b"));
+
+    let inode = table.add(path1.clone());
+    assert_eq!(*path1, *table.get_path(inode).unwrap());
+    assert_eq!(inode, table.get_inode(&*path1).unwrap());
+
+    table.rename(&*path1, path2.clone());
+    assert!(table.get_inode(&*path1).is_none());
+    assert_eq!(inode, table.get_inode(&*path2).unwrap());
+    assert_eq!(*path2, *table.get_path(inode).unwrap());
+}
+
+#[test]
+fn test_unlink() {
+    let mut table = InodeTable::new();
+    let path = Arc::new(PathBuf::from("/foo/bar"));
+
+    let inode = table.add(path.clone());
+
+    table.unlink(&*path);
+    assert!(table.get_inode(&*path).is_none());
+
+    // Getting the path for the inode should still return the path.
+    assert_eq!(*path, *table.get_path(inode).unwrap());
+
+    assert_eq!(0, table.forget(inode, 1));
+    assert!(table.get_path(inode).is_none());
+}
