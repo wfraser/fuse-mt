@@ -7,11 +7,15 @@
 use std::ffi::{OsStr, OsString};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::mpsc;
+use std::thread;
 
 use fuse::*;
+use futures::*;
 use libc;
-use threadpool::ThreadPool;
 use time::Timespec;
+use tokio_core::reactor::{Core, Remote};
 
 use directory_cache::*;
 use inode_table::*;
@@ -91,6 +95,10 @@ pub type ResultWrite = Result<u32, libc::c_int>;
 pub type ResultStatfs = Result<Statfs, libc::c_int>;
 pub type ResultCreate = Result<CreatedEntry, libc::c_int>;
 pub type ResultXattr = Result<Xattr, libc::c_int>;
+
+pub type FutureRead = BoxFuture<Vec<u8>, libc::c_int>;
+pub type FutureWrite = BoxFuture<u32, libc::c_int>;
+pub type FutureEmpty = BoxFuture<(), libc::c_int>;
 
 /// This trait must be implemented to implement a filesystem with FuseMT.
 pub trait FilesystemMT {
@@ -256,8 +264,8 @@ pub trait FilesystemMT {
     /// * `size`: number of bytes to read.
     ///
     /// Return the bytes read.
-    fn read(&self, _req: RequestInfo, _path: &Path, _fh: u64, _offset: u64, _size: u32) -> ResultData {
-        Err(libc::ENOSYS)
+    fn read(&self, _req: RequestInfo, _path: &Path, _fh: u64, _offset: u64, _size: u32) -> FutureRead {
+        future::err(libc::ENOSYS).boxed()
     }
 
     /// Write to a file.
@@ -269,8 +277,8 @@ pub trait FilesystemMT {
     /// * `flags`:
     ///
     /// Return the number of bytes written.
-    fn write(&self, _req: RequestInfo, _path: &Path, _fh: u64, _offset: u64, _data: Vec<u8>, _flags: u32) -> ResultWrite {
-        Err(libc::ENOSYS)
+    fn write(&self, _req: RequestInfo, _path: &Path, _fh: u64, _offset: u64, _data: Vec<u8>, _flags: u32) -> FutureWrite {
+        future::err(libc::ENOSYS).boxed()
     }
 
     /// Called each time a program calls `close` on an open file.
@@ -284,8 +292,8 @@ pub trait FilesystemMT {
     /// * `fh`: file handle returned from the `open` call.
     /// * `lock_owner`: if the filesystem supports locking (`setlk`, `getlk`), remove all locks
     ///   belonging to this lock owner.
-    fn flush(&self, _req: RequestInfo, _path: &Path, _fh: u64, _lock_owner: u64) -> ResultEmpty {
-        Err(libc::ENOSYS)
+    fn flush(&self, _req: RequestInfo, _path: &Path, _fh: u64, _lock_owner: u64) -> FutureEmpty {
+        future::err(libc::ENOSYS).boxed()
     }
 
     /// Called when an open file is closed.
@@ -310,8 +318,8 @@ pub trait FilesystemMT {
     /// * `path`: path to the file.
     /// * `fh`: file handle returned from the `open` call.
     /// * `datasync`: if `false`, just write metadata, otherwise also write file data.
-    fn fsync(&self, _req: RequestInfo, _path: &Path, _fh: u64, _datasync: bool) -> ResultEmpty {
-        Err(libc::ENOSYS)
+    fn fsync(&self, _req: RequestInfo, _path: &Path, _fh: u64, _datasync: bool) -> FutureEmpty {
+        future::err(libc::ENOSYS).boxed()
     }
 
     /// Open a directory.
@@ -443,28 +451,54 @@ pub trait FilesystemMT {
 pub struct FuseMT<T> {
     target: Arc<T>,
     inodes: InodeTable,
-    threads: Option<ThreadPool>,
-    num_threads: usize,
+    reactor: Option<Remote>,
+    reactor_run: Arc<AtomicBool>,
     directory_cache: DirectoryCache,
 }
 
 impl<T: FilesystemMT + Sync + Send + 'static> FuseMT<T> {
-    pub fn new(target_fs: T, num_threads: usize) -> FuseMT<T> {
+    pub fn new(target_fs: T) -> FuseMT<T> {
         FuseMT {
             target: Arc::new(target_fs),
             inodes: InodeTable::new(),
-            threads: None,
-            num_threads: num_threads,
+            reactor: None,
+            reactor_run: Arc::new(AtomicBool::new(true)),
             directory_cache: DirectoryCache::new(),
         }
     }
 
-    fn threadpool(&mut self) -> &ThreadPool {
-        if self.threads.is_none() {
-            debug!("initializing threadpool with {} threads", self.num_threads);
-            self.threads = Some(ThreadPool::new(self.num_threads));
+    fn reactor(&mut self) -> Remote {
+        if self.reactor.is_none() {
+            debug!("initializing tokio reactor core");
+
+            let (tx, rx) = mpsc::channel();
+            let run = self.reactor_run.clone();
+
+            thread::spawn(move || {
+                debug!("running tokio reactor on background thread");
+                let mut reactor = match Core::new() {
+                    Ok(r) => r,
+                    Err(e) => {
+                        error!("failed to create Tokio reactor core: {}", e);
+                        tx.send(Err(e)).expect("channel was closed early");
+                        return;
+                    }
+                };
+
+                tx.send(Ok(reactor.remote())).expect("channel was closed early");
+
+                while run.load(Ordering::Relaxed) {
+                    reactor.turn(None);
+                }
+            });
+
+            self.reactor = match rx.recv() {
+                Ok(Ok(remote)) => Some(remote),
+                Ok(Err(e)) => panic!("{}", e),
+                Err(_) => panic!("channel was closed early"),
+            };
         }
-        self.threads.as_ref().unwrap()
+        self.reactor.as_ref().unwrap().clone()
     }
 }
 
@@ -488,6 +522,7 @@ impl<T: FilesystemMT + Sync + Send + 'static> Filesystem for FuseMT<T> {
     fn destroy(&mut self, req: &Request) {
         debug!("destroy");
         self.target.destroy(req.info());
+        self.reactor_run.store(false, Ordering::Relaxed);
     }
 
     fn lookup(&mut self, req: &Request, parent: u64, name: &OsStr, reply: ReplyEntry) {
@@ -707,12 +742,15 @@ impl<T: FilesystemMT + Sync + Send + 'static> Filesystem for FuseMT<T> {
         debug!("read: {:?} {:#x} @ {:#x}", path, size, offset);
         let target = self.target.clone();
         let req_info = req.info();
-        self.threadpool().execute(move|| {
-            match target.read(req_info, &path, fh, offset, size) {
+        let f = target.read(req_info, &path, fh, offset, size).then(move |result| {
+            debug!("read finished");
+            match result {
                 Ok(ref data) => reply.data(data),
                 Err(e) => reply.error(e),
             }
+            Ok(())
         });
+        self.reactor().spawn(|_| f);
     }
 
     fn write(&mut self, req: &Request, ino: u64, fh: u64, offset: u64, data: &[u8], flags: u32, reply: ReplyWrite) {
@@ -725,12 +763,14 @@ impl<T: FilesystemMT + Sync + Send + 'static> Filesystem for FuseMT<T> {
         // slice of a single buffer that `rust-fuse` re-uses for the entire session.
         let data_buf = Vec::from(data);
 
-        self.threadpool().execute(move|| {
-            match target.write(req_info, &path, fh, offset, data_buf, flags) {
+        let f = target.write(req_info, &path, fh, offset, data_buf, flags).then(move |result| {
+            match result {
                 Ok(written) => reply.written(written),
                 Err(e) => reply.error(e),
             }
+            future::ok(())
         });
+        self.reactor().spawn(|_| f);
     }
 
     fn flush(&mut self, req: &Request, ino: u64, fh: u64, lock_owner: u64, reply: ReplyEmpty) {
@@ -738,12 +778,14 @@ impl<T: FilesystemMT + Sync + Send + 'static> Filesystem for FuseMT<T> {
         debug!("flush: {:?}", path);
         let target = self.target.clone();
         let req_info = req.info();
-        self.threadpool().execute(move|| {
-            match target.flush(req_info, &path, fh, lock_owner) {
+        let f = target.flush(req_info, &path, fh, lock_owner).then(move |result| {
+            match result {
                 Ok(()) => reply.ok(),
                 Err(e) => reply.error(e),
             }
+            Ok(())
         });
+        self.reactor().spawn(|_| f);
     }
 
     fn release(&mut self, req: &Request, ino: u64, fh: u64, flags: u32, lock_owner: u64, flush: bool, reply: ReplyEmpty) {
@@ -760,12 +802,14 @@ impl<T: FilesystemMT + Sync + Send + 'static> Filesystem for FuseMT<T> {
         debug!("fsync: {:?}", path);
         let target = self.target.clone();
         let req_info = req.info();
-        self.threadpool().execute(move|| {
-            match target.fsync(req_info, &path, fh, datasync) {
+        let f = target.fsync(req_info, &path, fh, datasync).then(move |result| {
+            match result {
                 Ok(()) => reply.ok(),
                 Err(e) => reply.error(e),
             }
+            Ok(())
         });
+        self.reactor().spawn(|_| f);
     }
 
     fn opendir(&mut self, req: &Request, ino: u64, flags: u32, reply: ReplyOpen) {

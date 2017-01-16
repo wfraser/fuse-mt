@@ -8,3 +8,4 @@ libc = "0.2"
 log = "0.3"
 time = "0.1"
 fuse_mt = { path = ".." }
+futures = "0.1"

@@ -15,9 +15,10 @@
 //
 
 extern crate fuse;
+extern crate futures;
 extern crate libc;
-extern crate threadpool;
 extern crate time;
+extern crate tokio_core;
 
 #[macro_use]
 extern crate log;

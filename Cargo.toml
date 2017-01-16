@@ -10,7 +10,8 @@ readme = "README.md"
 
 [dependencies]
 fuse = "0.3"
+futures = "0.1"
 libc = "0.2"
 log = "0.3"
-threadpool = "1.0"
 time = "0.1"
+tokio-core = "0.1"

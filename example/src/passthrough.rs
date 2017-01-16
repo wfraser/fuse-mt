@@ -16,6 +16,7 @@ use super::libc_extras::libc;
 use super::libc_wrappers;
 
 use fuse_mt::*;
+use futures::*;
 use time::*;
 
 pub struct PassthroughFS {
@@ -249,7 +250,7 @@ impl FilesystemMT for PassthroughFS {
         libc_wrappers::close(fh)
     }
 
-    fn read(&self, _req: RequestInfo, path: &Path, fh: u64, offset: u64, size: u32) -> ResultData {
+    fn read(&self, _req: RequestInfo, path: &Path, fh: u64, offset: u64, size: u32) -> FutureRead {
         debug!("read: {:?} {:#x} @ {:#x}", path, size, offset);
         let mut file = unsafe { UnmanagedFile::new(fh) };
 
@@ -258,51 +259,51 @@ impl FilesystemMT for PassthroughFS {
 
         if let Err(e) = file.seek(SeekFrom::Start(offset)) {
             error!("seek({:?}, {}): {}", path, offset, e);
-            return Err(e.raw_os_error().unwrap());
+            return future::err(e.raw_os_error().unwrap()).boxed();
         }
         match file.read(&mut data) {
             Ok(n) => { data.truncate(n); },
             Err(e) => {
                 error!("read {:?}, {:#x} @ {:#x}: {}", path, size, offset, e);
-                return Err(e.raw_os_error().unwrap());
+                return future::err(e.raw_os_error().unwrap()).boxed();
             }
         }
 
-        Ok(data)
+        future::ok(data).boxed()
     }
 
-    fn write(&self, _req: RequestInfo, path: &Path, fh: u64, offset: u64, data: Vec<u8>, _flags: u32) -> ResultWrite {
+    fn write(&self, _req: RequestInfo, path: &Path, fh: u64, offset: u64, data: Vec<u8>, _flags: u32) -> FutureWrite {
         debug!("write: {:?} {:#x} @ {:#x}", path, data.len(), offset);
         let mut file = unsafe { UnmanagedFile::new(fh) };
 
         if let Err(e) = file.seek(SeekFrom::Start(offset)) {
             error!("seek({:?}, {}): {}", path, offset, e);
-            return Err(e.raw_os_error().unwrap());
+            return future::err(e.raw_os_error().unwrap()).boxed();
         }
         let nwritten: u32 = match file.write(&data) {
             Ok(n) => n as u32,
             Err(e) => {
                 error!("write {:?}, {:#x} @ {:#x}: {}", path, data.len(), offset, e);
-                return Err(e.raw_os_error().unwrap());
+                return future::err(e.raw_os_error().unwrap()).boxed();
             }
         };
 
-        Ok(nwritten)
+        future::ok(nwritten).boxed()
     }
 
-    fn flush(&self, _req: RequestInfo, path: &Path, fh: u64, _lock_owner: u64) -> ResultEmpty {
+    fn flush(&self, _req: RequestInfo, path: &Path, fh: u64, _lock_owner: u64) -> FutureEmpty {
         debug!("flush: {:?}", path);
         let mut file = unsafe { UnmanagedFile::new(fh) };
 
         if let Err(e) = file.flush() {
             error!("flush({:?}): {}", path, e);
-            return Err(e.raw_os_error().unwrap());
+            return future::err(e.raw_os_error().unwrap()).boxed();
         }
 
-        Ok(())
+        future::ok(()).boxed()
     }
 
-    fn fsync(&self, _req: RequestInfo, path: &Path, fh: u64, datasync: bool) -> ResultEmpty {
+    fn fsync(&self, _req: RequestInfo, path: &Path, fh: u64, datasync: bool) -> FutureEmpty {
         debug!("fsync: {:?}, data={:?}", path, datasync);
         let file = unsafe { UnmanagedFile::new(fh) };
 
@@ -312,10 +313,10 @@ impl FilesystemMT for PassthroughFS {
             file.sync_all()
         } {
             error!("fsync({:?}, {:?}): {}", path, datasync, e);
-            return Err(e.raw_os_error().unwrap());
+            return future::err(e.raw_os_error().unwrap()).boxed();
         }
 
-        Ok(())
+        future::ok(()).boxed()
     }
 
     fn chmod(&self, _req: RequestInfo, path: &Path, fh: Option<u64>, mode: u32) -> ResultEmpty {
