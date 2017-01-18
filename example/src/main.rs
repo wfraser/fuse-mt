@@ -9,6 +9,7 @@ use std::ffi::{OsStr, OsString};
 extern crate futures;
 extern crate libc;
 extern crate time;
+extern crate tokio_core;
 
 #[macro_use]
 extern crate log;

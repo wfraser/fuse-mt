@@ -11,6 +11,7 @@ use std::io::{self, Read, Write, Seek, SeekFrom};
 use std::os::unix::ffi::{OsStrExt, OsStringExt};
 use std::os::unix::io::{FromRawFd, IntoRawFd};
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
 use super::libc_extras::libc;
 use super::libc_wrappers;
@@ -18,6 +19,7 @@ use super::libc_wrappers;
 use fuse_mt::*;
 use futures::*;
 use time::*;
+use tokio_core::io as tokio_io;
 
 pub struct PassthroughFS {
     pub target: OsString,
@@ -250,7 +252,7 @@ impl FilesystemMT for PassthroughFS {
         libc_wrappers::close(fh)
     }
 
-    fn read(&self, _req: RequestInfo, path: &Path, fh: u64, offset: u64, size: u32) -> FutureRead {
+    fn read(&self, _req: RequestInfo, path: Arc<PathBuf>, fh: u64, offset: u64, size: u32) -> FutureRead {
         debug!("read: {:?} {:#x} @ {:#x}", path, size, offset);
         let mut file = unsafe { UnmanagedFile::new(fh) };
 
@@ -261,18 +263,22 @@ impl FilesystemMT for PassthroughFS {
             error!("seek({:?}, {}): {}", path, offset, e);
             return future::err(e.raw_os_error().unwrap()).boxed();
         }
-        match file.read(&mut data) {
-            Ok(n) => { data.truncate(n); },
-            Err(e) => {
-                error!("read {:?}, {:#x} @ {:#x}: {}", path, size, offset, e);
-                return future::err(e.raw_os_error().unwrap()).boxed();
-            }
-        }
 
-        future::ok(data).boxed()
+        tokio_io::read(file, data).then(move |result| {
+            match result {
+                Ok((_file, mut data, n)) => {
+                    data.truncate(n);
+                    Ok(data)
+                },
+                Err(e) => {
+                    error!("read {:?}, {:#x} @ {:#x}: {}", path, size, offset, e);
+                    Err(e.raw_os_error().unwrap())
+                }
+            }
+        }).boxed()
     }
 
-    fn write(&self, _req: RequestInfo, path: &Path, fh: u64, offset: u64, data: Vec<u8>, _flags: u32) -> FutureWrite {
+    fn write(&self, _req: RequestInfo, path: Arc<PathBuf>, fh: u64, offset: u64, data: Vec<u8>, _flags: u32) -> FutureWrite {
         debug!("write: {:?} {:#x} @ {:#x}", path, data.len(), offset);
         let mut file = unsafe { UnmanagedFile::new(fh) };
 
@@ -280,43 +286,51 @@ impl FilesystemMT for PassthroughFS {
             error!("seek({:?}, {}): {}", path, offset, e);
             return future::err(e.raw_os_error().unwrap()).boxed();
         }
-        let nwritten: u32 = match file.write(&data) {
-            Ok(n) => n as u32,
-            Err(e) => {
-                error!("write {:?}, {:#x} @ {:#x}: {}", path, data.len(), offset, e);
-                return future::err(e.raw_os_error().unwrap()).boxed();
+
+        let len = data.len();
+        tokio_io::write_all(file, data).then(move |result| {
+            match result {
+                Ok((_file, _data)) => Ok(len as u32),
+                Err(e) => {
+                    error!("write {:?}, {:#x} @ {:#x}: {}", path, len, offset, e);
+                    Err(e.raw_os_error().unwrap())
+                }
             }
-        };
-
-        future::ok(nwritten).boxed()
+        }).boxed()
     }
 
-    fn flush(&self, _req: RequestInfo, path: &Path, fh: u64, _lock_owner: u64) -> FutureEmpty {
+    fn flush(&self, _req: RequestInfo, path: Arc<PathBuf>, fh: u64, _lock_owner: u64) -> FutureEmpty {
         debug!("flush: {:?}", path);
-        let mut file = unsafe { UnmanagedFile::new(fh) };
+        let file = unsafe { UnmanagedFile::new(fh) };
 
-        if let Err(e) = file.flush() {
-            error!("flush({:?}): {}", path, e);
-            return future::err(e.raw_os_error().unwrap()).boxed();
-        }
-
-        future::ok(()).boxed()
+        tokio_io::flush(file).then(move |result| {
+            match result {
+                Ok(_file) => Ok(()),
+                Err(e) => {
+                    error!("flush({:?}): {}", path, e);
+                    Err(e.raw_os_error().unwrap())
+                }
+            }
+        }).boxed()
     }
 
-    fn fsync(&self, _req: RequestInfo, path: &Path, fh: u64, datasync: bool) -> FutureEmpty {
+    fn fsync(&self, _req: RequestInfo, path: Arc<PathBuf>, fh: u64, datasync: bool) -> FutureEmpty {
         debug!("fsync: {:?}, data={:?}", path, datasync);
         let file = unsafe { UnmanagedFile::new(fh) };
 
-        if let Err(e) = if datasync {
-            file.sync_data()
-        } else {
-            file.sync_all()
-        } {
-            error!("fsync({:?}, {:?}): {}", path, datasync, e);
-            return future::err(e.raw_os_error().unwrap()).boxed();
-        }
-
-        future::ok(()).boxed()
+        future::lazy(move || -> Result<(), io::Error> {
+            // TODO: can this be partially replaced with tokio_core::io::flush() ?
+            if datasync {
+                file.sync_data()
+            } else {
+                file.sync_all()
+            }
+        }).then(move |result| -> Result<(), i32> {
+            result.map_err(move |e| {
+                error!("fsync({:?}, {:?}): {}", path, datasync, e);
+                e.raw_os_error().unwrap()
+            })
+        }).boxed()
     }
 
     fn chmod(&self, _req: RequestInfo, path: &Path, fh: Option<u64>, mode: u32) -> ResultEmpty {

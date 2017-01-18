@@ -264,7 +264,7 @@ pub trait FilesystemMT {
     /// * `size`: number of bytes to read.
     ///
     /// Return the bytes read.
-    fn read(&self, _req: RequestInfo, _path: &Path, _fh: u64, _offset: u64, _size: u32) -> FutureRead {
+    fn read(&self, _req: RequestInfo, _path: Arc<PathBuf>, _fh: u64, _offset: u64, _size: u32) -> FutureRead {
         future::err(libc::ENOSYS).boxed()
     }
 
@@ -277,7 +277,7 @@ pub trait FilesystemMT {
     /// * `flags`:
     ///
     /// Return the number of bytes written.
-    fn write(&self, _req: RequestInfo, _path: &Path, _fh: u64, _offset: u64, _data: Vec<u8>, _flags: u32) -> FutureWrite {
+    fn write(&self, _req: RequestInfo, _path: Arc<PathBuf>, _fh: u64, _offset: u64, _data: Vec<u8>, _flags: u32) -> FutureWrite {
         future::err(libc::ENOSYS).boxed()
     }
 
@@ -292,7 +292,7 @@ pub trait FilesystemMT {
     /// * `fh`: file handle returned from the `open` call.
     /// * `lock_owner`: if the filesystem supports locking (`setlk`, `getlk`), remove all locks
     ///   belonging to this lock owner.
-    fn flush(&self, _req: RequestInfo, _path: &Path, _fh: u64, _lock_owner: u64) -> FutureEmpty {
+    fn flush(&self, _req: RequestInfo, _path: Arc<PathBuf>, _fh: u64, _lock_owner: u64) -> FutureEmpty {
         future::err(libc::ENOSYS).boxed()
     }
 
@@ -318,7 +318,7 @@ pub trait FilesystemMT {
     /// * `path`: path to the file.
     /// * `fh`: file handle returned from the `open` call.
     /// * `datasync`: if `false`, just write metadata, otherwise also write file data.
-    fn fsync(&self, _req: RequestInfo, _path: &Path, _fh: u64, _datasync: bool) -> FutureEmpty {
+    fn fsync(&self, _req: RequestInfo, _path: Arc<PathBuf>, _fh: u64, _datasync: bool) -> FutureEmpty {
         future::err(libc::ENOSYS).boxed()
     }
 
@@ -742,7 +742,7 @@ impl<T: FilesystemMT + Sync + Send + 'static> Filesystem for FuseMT<T> {
         debug!("read: {:?} {:#x} @ {:#x}", path, size, offset);
         let target = self.target.clone();
         let req_info = req.info();
-        let f = target.read(req_info, &path, fh, offset, size).then(move |result| {
+        let f = target.read(req_info, path.clone(), fh, offset, size).then(move |result| {
             debug!("read finished");
             match result {
                 Ok(ref data) => reply.data(data),
@@ -763,7 +763,7 @@ impl<T: FilesystemMT + Sync + Send + 'static> Filesystem for FuseMT<T> {
         // slice of a single buffer that `rust-fuse` re-uses for the entire session.
         let data_buf = Vec::from(data);
 
-        let f = target.write(req_info, &path, fh, offset, data_buf, flags).then(move |result| {
+        let f = target.write(req_info, path.clone(), fh, offset, data_buf, flags).then(move |result| {
             match result {
                 Ok(written) => reply.written(written),
                 Err(e) => reply.error(e),
@@ -778,7 +778,7 @@ impl<T: FilesystemMT + Sync + Send + 'static> Filesystem for FuseMT<T> {
         debug!("flush: {:?}", path);
         let target = self.target.clone();
         let req_info = req.info();
-        let f = target.flush(req_info, &path, fh, lock_owner).then(move |result| {
+        let f = target.flush(req_info, path.clone(), fh, lock_owner).then(move |result| {
             match result {
                 Ok(()) => reply.ok(),
                 Err(e) => reply.error(e),
@@ -802,7 +802,7 @@ impl<T: FilesystemMT + Sync + Send + 'static> Filesystem for FuseMT<T> {
         debug!("fsync: {:?}", path);
         let target = self.target.clone();
         let req_info = req.info();
-        let f = target.fsync(req_info, &path, fh, datasync).then(move |result| {
+        let f = target.fsync(req_info, path.clone(), fh, datasync).then(move |result| {
             match result {
                 Ok(()) => reply.ok(),
                 Err(e) => reply.error(e),

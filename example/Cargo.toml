@@ -9,3 +9,4 @@ log = "0.3"
 time = "0.1"
 fuse_mt = { path = ".." }
 futures = "0.1"
+tokio-core = "0.1"
