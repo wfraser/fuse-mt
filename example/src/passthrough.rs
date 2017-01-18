@@ -318,14 +318,14 @@ impl FilesystemMT for PassthroughFS {
         debug!("fsync: {:?}, data={:?}", path, datasync);
         let file = unsafe { UnmanagedFile::new(fh) };
 
-        future::lazy(move || -> Result<(), io::Error> {
+        future::lazy(move || {
             // TODO: can this be partially replaced with tokio_core::io::flush() ?
-            if datasync {
+            let result = if datasync {
                 file.sync_data()
             } else {
                 file.sync_all()
-            }
-        }).then(move |result| -> Result<(), i32> {
+            };
+
             result.map_err(move |e| {
                 error!("fsync({:?}, {:?}): {}", path, datasync, e);
                 e.raw_os_error().unwrap()
