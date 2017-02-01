@@ -261,21 +261,27 @@ fn test_inode_reuse() {
     let path1 = Arc::new(PathBuf::from("/foo/a"));
     let path2 = Arc::new(PathBuf::from("/foo/b"));
 
-    let inode1 = table.add(path1.clone());
+    // Add a path.
+    let inode1 = table.add(path1.clone()).0;
     assert!(inode1 != 1);
     assert_eq!(*path1, *table.get_path(inode1).unwrap());
 
-    let inode2 = table.add(path2.clone());
+    // Add a second path; verify that the inode number is different.
+    let inode2 = table.add(path2.clone()).0;
     assert!(inode2 != inode1);
     assert!(inode2 != 1);
     assert_eq!(*path2, *table.get_path(inode2).unwrap());
 
+    // Forget the first inode; verify that lookups on it fail.
     assert_eq!(0, table.forget(inode1, 1));
     assert!(table.get_path(inode1).is_none());
 
-    let inode3 = table.add(Arc::new(PathBuf::from("/foo/c")));
+    // Add a third path; verify that the inode is reused.
+    let (inode3, generation3) = table.add(Arc::new(PathBuf::from("/foo/c")));
     assert_eq!(inode1, inode3);
+    assert_eq!(1, generation3);
 
+    // Check that lookups on the third path succeed.
     assert_eq!(Path::new("/foo/c"), *table.get_path(inode3).unwrap());
 }
 
@@ -285,15 +291,18 @@ fn test_add_or_get() {
     let path1 = Arc::new(PathBuf::from("/foo/a"));
     let path2 = Arc::new(PathBuf::from("/foo/b"));
 
-    let inode1 = table.add_or_get(path1.clone());
+    // add_or_get() a path and verify that get by inode works before lookup() is done.
+    let inode1 = table.add_or_get(path1.clone()).0;
     assert_eq!(*path1, *table.get_path(inode1).unwrap());
     table.lookup(inode1);
 
-    let inode2 = table.add(path2.clone());
+    // add() a second path and verify that get by path and inode work.
+    let inode2 = table.add(path2.clone()).0;
     assert_eq!(*path2, *table.get_path(inode2).unwrap());
-    assert_eq!(inode2, table.add_or_get(path2.clone()));
+    assert_eq!(inode2, table.add_or_get(path2.clone()).0);
     table.lookup(inode2);
 
+    // Check the ref counts by doing a single forget.
     assert_eq!(0, table.forget(inode1, 1));
     assert_eq!(1, table.forget(inode2, 1));
 }
@@ -304,10 +313,13 @@ fn test_inode_rename() {
     let path1 = Arc::new(PathBuf::from("/foo/a"));
     let path2 = Arc::new(PathBuf::from("/foo/b"));
 
-    let inode = table.add(path1.clone());
+    // Add a path; verify that get by path and inode work.
+    let inode = table.add(path1.clone()).0;
     assert_eq!(*path1, *table.get_path(inode).unwrap());
     assert_eq!(inode, table.get_inode(&*path1).unwrap());
 
+    // Rename the inode; verify that get by the new path works and old path doesn't, and get by
+    // inode still works.
     table.rename(&*path1, path2.clone());
     assert!(table.get_inode(&*path1).is_none());
     assert_eq!(inode, table.get_inode(&*path2).unwrap());
@@ -319,14 +331,17 @@ fn test_unlink() {
     let mut table = InodeTable::new();
     let path = Arc::new(PathBuf::from("/foo/bar"));
 
-    let inode = table.add(path.clone());
+    // Add a path.
+    let inode = table.add(path.clone()).0;
 
+    // Unlink it and verify that get by path fails.
     table.unlink(&*path);
     assert!(table.get_inode(&*path).is_none());
 
     // Getting the path for the inode should still return the path.
     assert_eq!(*path, *table.get_path(inode).unwrap());
 
+    // Verify that forgetting it once drops the refcount to zero and then lookups by inode fail.
     assert_eq!(0, table.forget(inode, 1));
     assert!(table.get_path(inode).is_none());
 }
