@@ -449,7 +449,7 @@ pub trait FilesystemMT {
 }
 
 pub struct FuseMT<T> {
-    target: Arc<T>,
+    target: T,
     inodes: InodeTable,
     reactor: Option<Remote>,
     reactor_run: Arc<AtomicBool>,
@@ -459,7 +459,7 @@ pub struct FuseMT<T> {
 impl<T: FilesystemMT + Sync + Send + 'static> FuseMT<T> {
     pub fn new(target_fs: T) -> FuseMT<T> {
         FuseMT {
-            target: Arc::new(target_fs),
+            target: target_fs,
             inodes: InodeTable::new(),
             reactor: None,
             reactor_run: Arc::new(AtomicBool::new(true)),
@@ -740,9 +740,8 @@ impl<T: FilesystemMT + Sync + Send + 'static> Filesystem for FuseMT<T> {
     fn read(&mut self, req: &Request, ino: u64, fh: u64, offset: u64, size: u32, reply: ReplyData) {
         let path = get_path!(self, ino, reply);
         debug!("read: {:?} {:#x} @ {:#x}", path, size, offset);
-        let target = self.target.clone();
         let req_info = req.info();
-        let f = target.read(req_info, path.clone(), fh, offset, size).then(move |result| {
+        let f = self.target.read(req_info, path.clone(), fh, offset, size).then(move |result| {
             debug!("read finished");
             match result {
                 Ok(ref data) => reply.data(data),
@@ -756,14 +755,13 @@ impl<T: FilesystemMT + Sync + Send + 'static> Filesystem for FuseMT<T> {
     fn write(&mut self, req: &Request, ino: u64, fh: u64, offset: u64, data: &[u8], flags: u32, reply: ReplyWrite) {
         let path = get_path!(self, ino, reply);
         debug!("write: {:?} {:#x} @ {:#x}", path, data.len(), offset);
-        let target = self.target.clone();
         let req_info = req.info();
 
         // The data needs to be copied here before dispatching to the threadpool because it's a
         // slice of a single buffer that `rust-fuse` re-uses for the entire session.
         let data_buf = Vec::from(data);
 
-        let f = target.write(req_info, path.clone(), fh, offset, data_buf, flags).then(move |result| {
+        let f = self.target.write(req_info, path.clone(), fh, offset, data_buf, flags).then(move |result| {
             match result {
                 Ok(written) => reply.written(written),
                 Err(e) => reply.error(e),
@@ -776,9 +774,8 @@ impl<T: FilesystemMT + Sync + Send + 'static> Filesystem for FuseMT<T> {
     fn flush(&mut self, req: &Request, ino: u64, fh: u64, lock_owner: u64, reply: ReplyEmpty) {
         let path = get_path!(self, ino, reply);
         debug!("flush: {:?}", path);
-        let target = self.target.clone();
         let req_info = req.info();
-        let f = target.flush(req_info, path.clone(), fh, lock_owner).then(move |result| {
+        let f = self.target.flush(req_info, path.clone(), fh, lock_owner).then(move |result| {
             match result {
                 Ok(()) => reply.ok(),
                 Err(e) => reply.error(e),
@@ -800,9 +797,8 @@ impl<T: FilesystemMT + Sync + Send + 'static> Filesystem for FuseMT<T> {
     fn fsync(&mut self, req: &Request, ino: u64, fh: u64, datasync: bool, reply: ReplyEmpty) {
         let path = get_path!(self, ino, reply);
         debug!("fsync: {:?}", path);
-        let target = self.target.clone();
         let req_info = req.info();
-        let f = target.fsync(req_info, path.clone(), fh, datasync).then(move |result| {
+        let f = self.target.fsync(req_info, path.clone(), fh, datasync).then(move |result| {
             match result {
                 Ok(()) => reply.ok(),
                 Err(e) => reply.error(e),
