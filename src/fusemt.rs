@@ -73,7 +73,6 @@ pub struct Statfs {
 pub struct CreatedEntry {
     pub ttl: Timespec,
     pub attr: FileAttr,
-    pub generation: u64,
     pub fh: u64,
     pub flags: u32,
 }
@@ -87,7 +86,7 @@ pub enum Xattr {
 
 pub type ResultEmpty = Result<(), libc::c_int>;
 pub type ResultGetattr = Result<(Timespec, FileAttr), libc::c_int>;
-pub type ResultEntry = Result<(Timespec, FileAttr, u64), libc::c_int>;
+pub type ResultEntry = Result<(Timespec, FileAttr), libc::c_int>;
 pub type ResultOpen = Result<(u64, u32), libc::c_int>;
 pub type ResultReaddir = Result<Vec<DirectoryEntry>, libc::c_int>;
 pub type ResultData = Result<Vec<u8>, libc::c_int>;
@@ -530,8 +529,8 @@ impl<T: FilesystemMT + Sync + Send + 'static> Filesystem for FuseMT<T> {
         debug!("lookup: {:?}, {:?}", parent_path, name);
         let path = Arc::new((*parent_path).clone().join(name));
         match self.target.lookup(req.info(), Path::new(&*parent_path), name) {
-            Ok((ref ttl, ref mut attr, generation)) => {
-                let ino = self.inodes.add_or_get(path.clone());
+            Ok((ref ttl, ref mut attr)) => {
+                let (ino, generation) = self.inodes.add_or_get(path.clone());
                 self.inodes.lookup(ino);
                 attr.ino = ino;
                 reply.entry(ttl, attr, generation);
@@ -643,8 +642,8 @@ impl<T: FilesystemMT + Sync + Send + 'static> Filesystem for FuseMT<T> {
         let parent_path = get_path!(self, parent, reply);
         debug!("mknod: {:?}/{:?}", parent_path, name);
         match self.target.mknod(req.info(), &parent_path, name, mode, rdev) {
-            Ok((ref ttl, ref mut attr, generation)) => {
-                let ino = self.inodes.add(Arc::new(parent_path.join(name)));
+            Ok((ref ttl, ref mut attr)) => {
+                let (ino, generation) = self.inodes.add(Arc::new(parent_path.join(name)));
                 attr.ino = ino;
                 reply.entry(ttl, attr, generation)
             },
@@ -656,8 +655,8 @@ impl<T: FilesystemMT + Sync + Send + 'static> Filesystem for FuseMT<T> {
         let parent_path = get_path!(self, parent, reply);
         debug!("mkdir: {:?}/{:?}", parent_path, name);
         match self.target.mkdir(req.info(), &parent_path, name, mode) {
-            Ok((ref ttl, ref mut attr, generation)) => {
-                let ino = self.inodes.add(Arc::new(parent_path.join(name)));
+            Ok((ref ttl, ref mut attr)) => {
+                let (ino, generation) = self.inodes.add(Arc::new(parent_path.join(name)));
                 attr.ino = ino;
                 reply.entry(ttl, attr, generation)
             },
@@ -690,8 +689,8 @@ impl<T: FilesystemMT + Sync + Send + 'static> Filesystem for FuseMT<T> {
         let parent_path = get_path!(self, parent, reply);
         debug!("symlink: {:?}/{:?} -> {:?}", parent_path, name, link);
         match self.target.symlink(req.info(), &parent_path, name, link) {
-            Ok((ref ttl, ref mut attr, generation)) => {
-                let ino = self.inodes.add(Arc::new(parent_path.join(name)));
+            Ok((ref ttl, ref mut attr)) => {
+                let (ino, generation) = self.inodes.add(Arc::new(parent_path.join(name)));
                 attr.ino = ino;
                 reply.entry(ttl, attr, generation)
             },
@@ -717,10 +716,10 @@ impl<T: FilesystemMT + Sync + Send + 'static> Filesystem for FuseMT<T> {
         let newparent_path = get_path!(self, newparent, reply);
         debug!("link: {:?} -> {:?}/{:?}", path, newparent_path, newname);
         match self.target.link(req.info(), &path, &newparent_path, newname) {
-            Ok((ref ttl, ref mut attr, generation)) => {
+            Ok((ref ttl, ref mut attr)) => {
                 // NOTE: this results in the new link having a different inode from the original.
                 // This is needed because our inode table is a 1:1 map between paths and inodes.
-                let new_ino = self.inodes.add(Arc::new(newparent_path.join(newname)));
+                let (new_ino, generation) = self.inodes.add(Arc::new(newparent_path.join(newname)));
                 attr.ino = new_ino;
                 reply.entry(ttl, attr, generation);
             },
@@ -997,9 +996,9 @@ impl<T: FilesystemMT + Sync + Send + 'static> Filesystem for FuseMT<T> {
         debug!("create: {:?}/{:?} (mode={:#o}, flags={:#x})", parent_path, name, mode, flags);
         match self.target.create(req.info(), &parent_path, name, mode, flags) {
             Ok(mut create) => {
-                let ino = self.inodes.add(Arc::new(parent_path.join(name)));
+                let (ino, generation) = self.inodes.add(Arc::new(parent_path.join(name)));
                 create.attr.ino = ino;
-                reply.created(&create.ttl, &create.attr, create.generation, create.fh, create.flags);
+                reply.created(&create.ttl, &create.attr, generation, create.fh, create.flags);
             },
             Err(e) => reply.error(e),
         }

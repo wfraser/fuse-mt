@@ -1,9 +1,10 @@
 [package]
 name = "fuse_mt"
-version = "0.2.2"
+version = "0.3.0"
 authors = ["William R. Fraser <wfraser@codewise.org>"]
 repository = "https://github.com/wfraser/fuse-mt"
 description = "(work in progress) A higher-level FUSE filesystem library with multi-threading and inode->path translation."
+categories = ["filesystem"]
 keywords = ["fuse", "filesystem"]
 license = "MIT/Apache-2.0"
 readme = "README.md"

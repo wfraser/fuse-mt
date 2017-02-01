@@ -1,3 +1,11 @@
+v0.3.0: 2017-02-01
+  * Merged the `generation-managed` branch.
+      * The inode table now keeps track of when it re-uses an inode.
+      * This is a breaking change because the type signature of `ResultEntry` was changed to not
+        have a `generation` member. This affects the `lookup`, `mknod`, `mkdir`, `symlink`,
+        `link`, and `create` calls.
+  * Added some tests for the inode table.
+
 v0.2.2: 2017-01-13
   * fixed a build error on 32-bit Linux.
   * added a `VERSION` public const string with the fuse_mt package version.

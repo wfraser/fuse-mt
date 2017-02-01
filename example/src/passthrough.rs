@@ -152,7 +152,7 @@ impl FilesystemMT for PassthroughFS {
 
         let path = PathBuf::from(parent).join(name);
         match self.stat_real(&path) {
-            Ok(attr) => Ok((TTL, attr, 0)),
+            Ok(attr) => Ok((TTL, attr)),
             Err(e) => {
                 error!("stat_real({:?}): {}", path, e);
                 Err(e.raw_os_error().unwrap())
@@ -498,7 +498,7 @@ impl FilesystemMT for PassthroughFS {
             Err(e.raw_os_error().unwrap())
         } else {
             match libc_wrappers::lstat(real.into_os_string()) {
-                Ok(attr) => Ok((TTL, stat_to_fuse(attr), 0)),
+                Ok(attr) => Ok((TTL, stat_to_fuse(attr))),
                 Err(e) => Err(e),   // if this happens, yikes
             }
         }
@@ -519,7 +519,7 @@ impl FilesystemMT for PassthroughFS {
             Err(e.raw_os_error().unwrap())
         } else {
             match libc_wrappers::lstat(real.clone().into_os_string()) {
-                Ok(attr) => Ok((TTL, stat_to_fuse(attr), 0)),
+                Ok(attr) => Ok((TTL, stat_to_fuse(attr))),
                 Err(e) => {
                     error!("lstat after mkdir({:?}, {:#o}): {}", real, mode, e);
                     Err(e)   // if this happens, yikes
@@ -557,7 +557,7 @@ impl FilesystemMT for PassthroughFS {
         match ::std::os::unix::fs::symlink(target, &real) {
             Ok(()) => {
                 match libc_wrappers::lstat(real.clone().into_os_string()) {
-                    Ok(attr) => Ok((TTL, stat_to_fuse(attr), 0)),
+                    Ok(attr) => Ok((TTL, stat_to_fuse(attr))),
                     Err(e) => {
                         error!("lstat after symlink({:?}, {:?}): {}", real, target, e);
                         Err(e)
@@ -591,7 +591,7 @@ impl FilesystemMT for PassthroughFS {
         match fs::hard_link(&real, &newreal) {
             Ok(()) => {
                 match libc_wrappers::lstat(real.clone()) {
-                    Ok(attr) => Ok((TTL, stat_to_fuse(attr), 0)),
+                    Ok(attr) => Ok((TTL, stat_to_fuse(attr))),
                     Err(e) => {
                         error!("lstat after link({:?}, {:?}): {}", real, newreal, e);
                         Err(e)
@@ -623,7 +623,6 @@ impl FilesystemMT for PassthroughFS {
                 Ok(attr) => Ok(CreatedEntry {
                     ttl: TTL,
                     attr: stat_to_fuse(attr),
-                    generation: 0,
                     fh: fd as u64,
                     flags: flags,
                 }),
@@ -632,7 +631,6 @@ impl FilesystemMT for PassthroughFS {
                     Err(e)
                 },
             }
-
         }
     }
 
