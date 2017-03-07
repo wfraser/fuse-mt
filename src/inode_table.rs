@@ -137,7 +137,7 @@ impl InodeTable {
             return;
         }
 
-        let ref mut entry = self.table[inode as usize - 1];
+        let entry = &mut self.table[inode as usize - 1];
         entry.lookups += 1;
         debug!("lookups on {} -> {:?} now {}", inode, entry.path, entry.lookups);
     }
@@ -163,7 +163,7 @@ impl InodeTable {
         let idx = inode as usize - 1;
 
         {
-            let ref mut entry = self.table[idx];
+            let entry = &mut self.table[idx];
             println!("forget entry {:?}", entry);
             assert!(n <= entry.lookups);
             entry.lookups -= n;
@@ -219,7 +219,7 @@ impl InodeTable {
                 table.len() - 1
             }
         };
-        ((idx + 1) as Inode, table.get_mut(idx).unwrap())
+        ((idx + 1) as Inode, &mut table[idx])
     }
 }
 

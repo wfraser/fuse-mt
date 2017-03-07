@@ -1,0 +1,2 @@
+# Additional words to be allowed without backticks by the `doc_markdown` lint.
+doc-valid-idents = ["FuseMT"]

@@ -494,7 +494,7 @@ impl<T: FilesystemMT + Sync + Send + 'static> FuseMT<T> {
             self.reactor = match rx.recv() {
                 Ok(Ok(remote)) => Some(remote),
                 Ok(Err(e)) => panic!("{}", e),
-                Err(_) => panic!("channel was closed early"),
+                Err(mpsc::RecvError) => panic!("channel was closed early"),
             };
         }
         self.reactor.as_ref().unwrap().clone()
