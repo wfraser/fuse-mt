@@ -413,7 +413,7 @@ pub trait FilesystemMT {
     /// * `path`: path to the file.
     /// * `mask`: mode bits to check for access to.
     ///
-    /// Return `Ok(())` if all requested permissions are allowed, otherwise return `Err(EACCESS)`
+    /// Return `Ok(())` if all requested permissions are allowed, otherwise return `Err(EACCES)`
     /// or other error code as appropriate (e.g. `ENOENT` if the file doesn't exist).
     fn access(&self, _req: RequestInfo, _path: &Path, _mask: u32) -> ResultEmpty {
         Err(libc::ENOSYS)
