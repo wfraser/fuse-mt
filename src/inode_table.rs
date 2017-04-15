@@ -15,7 +15,7 @@ pub type Inode = u64;
 pub type Generation = u64;
 pub type LookupCount = u64;
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 struct InodeTableEntry {
     path: Option<Arc<PathBuf>>,
     lookups: LookupCount,
@@ -224,6 +224,7 @@ impl InodeTable {
 }
 
 // Facilitates comparing Rc<PathBuf> and &Path
+#[derive(Debug, Clone)]
 struct Pathish {
     inner: Path,
 }
