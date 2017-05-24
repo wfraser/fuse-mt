@@ -21,6 +21,7 @@ use super::DirectoryEntry;
 /// To do this, we need to cache the response from the filesystem, and we need to give FUSE our own
 /// file handle (the cache entry key) instead of the one the filesystem returned from opendir(), so
 /// we have to store that file handle as well.
+#[derive(Debug)]
 pub struct DirectoryCache {
     next_key: Wrapping<u64>,
     entries: HashMap<u64, DirectoryCacheEntry>,
@@ -67,6 +68,7 @@ impl DirectoryCache {
     }
 }
 
+#[derive(Debug, Clone)]
 pub struct DirectoryCacheEntry {
     pub fh: u64,
     pub entries: Option<Vec<DirectoryEntry>>,

@@ -22,6 +22,7 @@ use inode_table::*;
 /// * `uid`: the user ID of the process making the request.
 /// * `gid`: the group ID of the process making the request.
 /// * `pid`: the process ID of the process making the request.
+#[derive(Debug, Copy, Clone)]
 pub struct RequestInfo {
     pub unique: u64,
     pub uid: u32,
@@ -48,11 +49,13 @@ impl<'a> IntoRequestInfo for Request<'a> {
 ///
 /// * `name`: the name of the entry
 /// * `kind`:
+#[derive(Debug, Clone)]
 pub struct DirectoryEntry {
     pub name: OsString,
     pub kind: FileType,
 }
 
+#[derive(Debug, Copy, Clone)]
 pub struct Statfs {
     pub blocks: u64,
     pub bfree: u64,
@@ -66,6 +69,7 @@ pub struct Statfs {
 
 /// The return value for `create`: contains info on the newly-created file, as well as a handle to
 /// the opened file.
+#[derive(Debug, Copy, Clone)]
 pub struct CreatedEntry {
     pub ttl: Timespec,
     pub attr: FileAttr,
@@ -75,6 +79,7 @@ pub struct CreatedEntry {
 
 /// Represents the return value from the `listxattr` and `getxattr` calls, which can be either a
 /// size or contain data, depending on how they are called.
+#[derive(Debug, Clone)]
 pub enum Xattr {
     Size(u32),
     Data(Vec<u8>),
@@ -439,6 +444,7 @@ pub trait FilesystemMT {
     // bmap
 }
 
+#[derive(Debug)]
 pub struct FuseMT<T> {
     target: Arc<T>,
     inodes: InodeTable,
