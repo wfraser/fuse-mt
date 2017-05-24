@@ -25,9 +25,11 @@ extern crate log;
 mod directory_cache;
 mod fusemt;
 mod inode_table;
+mod types;
 
 pub const VERSION: &'static str = env!("CARGO_PKG_VERSION");
 
 pub use fuse::{FileAttr, FileType, mount, spawn_mount};
 
 pub use fusemt::*;
+pub use types::*;
