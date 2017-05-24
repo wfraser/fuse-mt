@@ -131,7 +131,7 @@ impl FilesystemMT for PassthroughFS {
         debug!("destroy");
     }
 
-    fn getattr(&self, _req: RequestInfo, path: &Path, fh: Option<u64>) -> ResultGetattr {
+    fn getattr(&self, _req: RequestInfo, path: &Path, fh: Option<u64>) -> ResultEntry {
         debug!("getattr: {:?}", path);
 
         if let Some(fh) = fh {
