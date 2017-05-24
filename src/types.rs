@@ -69,6 +69,9 @@ pub type ResultStatfs = Result<Statfs, libc::c_int>;
 pub type ResultCreate = Result<CreatedEntry, libc::c_int>;
 pub type ResultXattr = Result<Xattr, libc::c_int>;
 
+#[deprecated(since = "0.3.0", note = "use ResultEntry instead")]
+pub type ResultGetattr = ResultEntry;
+
 /// This trait must be implemented to implement a filesystem with FuseMT.
 pub trait FilesystemMT {
     /// Called on mount, before any other function.
