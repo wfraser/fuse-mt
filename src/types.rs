@@ -71,6 +71,9 @@ pub type ResultStatfs = Result<Statfs, libc::c_int>;
 pub type ResultCreate = Result<CreatedEntry, libc::c_int>;
 pub type ResultXattr = Result<Xattr, libc::c_int>;
 
+#[deprecated(since = "0.3.0", note = "use ResultEntry instead")]
+pub type ResultGetattr = ResultEntry;
+
 pub type FutureRead = BoxFuture<Vec<u8>, libc::c_int>;
 pub type FutureWrite = BoxFuture<u32, libc::c_int>;
 pub type FutureEmpty = BoxFuture<(), libc::c_int>;
