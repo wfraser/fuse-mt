@@ -109,7 +109,7 @@ impl<T: FilesystemMT + Sync + Send + 'static> fuse::Filesystem for FuseMT<T> {
         let parent_path = get_path!(self, parent, reply);
         debug!("lookup: {:?}, {:?}", parent_path, name);
         let path = Arc::new((*parent_path).clone().join(name));
-        match self.target.lookup(req.info(), Path::new(&*parent_path), name) {
+        match self.target.getattr(req.info(), &path, None) {
             Ok((ttl, attr)) => {
                 let (ino, generation) = self.inodes.add_or_get(path.clone());
                 self.inodes.lookup(ino);

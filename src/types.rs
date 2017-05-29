@@ -121,14 +121,6 @@ pub trait FilesystemMT {
         // Nothing.
     }
 
-    /// Look up a filesystem entry and get its attributes.
-    ///
-    /// * `parent`: path to the parent of the entry being looked up
-    /// * `name`: the name of the entry (under `parent`) being looked up.
-    fn lookup(&self, _req: RequestInfo, _parent: &Path, _name: &OsStr) -> ResultEntry {
-        Err(libc::ENOSYS)
-    }
-
     /// Get the attributes of a filesystem entry.
     ///
     /// * `fh`: a file handle if this is called on an open file.
