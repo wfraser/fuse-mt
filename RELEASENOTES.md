@@ -1,3 +1,7 @@
+v0.4.0: 2017-05-29
+  * Removed `FilesystemMT::lookup`. See #10.
+  * Removed the `ino` field of `FileAttr`. See #12.
+
 v0.3.0: 2017-02-01
   * Merged the `generation-managed` branch.
       * The inode table now keeps track of when it re-uses an inode.
