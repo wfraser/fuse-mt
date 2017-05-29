@@ -47,7 +47,6 @@ fn stat_to_fuse(stat: libc::stat64) -> FileAttr {
     let mode = stat.st_mode & 0o7777; // st_mode encodes the type AND the mode.
 
     FileAttr {
-        ino: 0,
         size: stat.st_size as u64,
         blocks: stat.st_blocks as u64,
         atime: Timespec { sec: stat.st_atime as i64, nsec: stat.st_atime_nsec as i32 },

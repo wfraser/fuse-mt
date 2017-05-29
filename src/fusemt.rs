@@ -32,6 +32,25 @@ impl<'a> IntoRequestInfo for fuse::Request<'a> {
     }
 }
 
+fn fuse_fileattr(attr: FileAttr, ino: u64) -> fuse::FileAttr {
+    fuse::FileAttr {
+        ino: ino,
+        size: attr.size,
+        blocks: attr.blocks,
+        atime: attr.atime,
+        mtime: attr.mtime,
+        ctime: attr.ctime,
+        crtime: attr.crtime,
+        kind: attr.kind,
+        perm: attr.perm,
+        nlink: attr.nlink,
+        uid: attr.uid,
+        gid: attr.gid,
+        rdev: attr.rdev,
+        flags: attr.flags,
+    }
+}
+
 pub struct FuseMT<T> {
     target: Arc<T>,
     inodes: InodeTable,
@@ -91,11 +110,10 @@ impl<T: FilesystemMT + Sync + Send + 'static> fuse::Filesystem for FuseMT<T> {
         debug!("lookup: {:?}, {:?}", parent_path, name);
         let path = Arc::new((*parent_path).clone().join(name));
         match self.target.lookup(req.info(), Path::new(&*parent_path), name) {
-            Ok((ref ttl, ref mut attr)) => {
+            Ok((ttl, attr)) => {
                 let (ino, generation) = self.inodes.add_or_get(path.clone());
                 self.inodes.lookup(ino);
-                attr.ino = ino;
-                reply.entry(ttl, attr, generation);
+                reply.entry(&ttl, &fuse_fileattr(attr, ino), generation);
             },
             Err(e) => reply.error(e),
         }
@@ -113,9 +131,8 @@ impl<T: FilesystemMT + Sync + Send + 'static> fuse::Filesystem for FuseMT<T> {
         let path = get_path!(self, ino, reply);
         debug!("getattr: {:?}", path);
         match self.target.getattr(req.info(), &path, None) {
-            Ok((ref ttl, ref mut attr)) => {
-                attr.ino = ino;
-                reply.attr(ttl, attr)
+            Ok((ttl, attr)) => {
+                reply.attr(&ttl, &fuse_fileattr(attr, ino))
             },
             Err(e) => reply.error(e),
         }
@@ -186,7 +203,7 @@ impl<T: FilesystemMT + Sync + Send + 'static> fuse::Filesystem for FuseMT<T> {
         }
 
         match self.target.getattr(req.info(), &path, fh) {
-            Ok((ref ttl, ref attr)) => reply.attr(ttl, attr),
+            Ok((ttl, attr)) => reply.attr(&ttl, &fuse_fileattr(attr, ino)),
             Err(e) => reply.error(e),
         }
    }
@@ -204,10 +221,9 @@ impl<T: FilesystemMT + Sync + Send + 'static> fuse::Filesystem for FuseMT<T> {
         let parent_path = get_path!(self, parent, reply);
         debug!("mknod: {:?}/{:?}", parent_path, name);
         match self.target.mknod(req.info(), &parent_path, name, mode, rdev) {
-            Ok((ref ttl, ref mut attr)) => {
+            Ok((ttl, attr)) => {
                 let (ino, generation) = self.inodes.add(Arc::new(parent_path.join(name)));
-                attr.ino = ino;
-                reply.entry(ttl, attr, generation)
+                reply.entry(&ttl, &fuse_fileattr(attr, ino), generation)
             },
             Err(e) => reply.error(e),
         }
@@ -217,10 +233,9 @@ impl<T: FilesystemMT + Sync + Send + 'static> fuse::Filesystem for FuseMT<T> {
         let parent_path = get_path!(self, parent, reply);
         debug!("mkdir: {:?}/{:?}", parent_path, name);
         match self.target.mkdir(req.info(), &parent_path, name, mode) {
-            Ok((ref ttl, ref mut attr)) => {
+            Ok((ttl, attr)) => {
                 let (ino, generation) = self.inodes.add(Arc::new(parent_path.join(name)));
-                attr.ino = ino;
-                reply.entry(ttl, attr, generation)
+                reply.entry(&ttl, &fuse_fileattr(attr, ino), generation)
             },
             Err(e) => reply.error(e),
         }
@@ -251,10 +266,9 @@ impl<T: FilesystemMT + Sync + Send + 'static> fuse::Filesystem for FuseMT<T> {
         let parent_path = get_path!(self, parent, reply);
         debug!("symlink: {:?}/{:?} -> {:?}", parent_path, name, link);
         match self.target.symlink(req.info(), &parent_path, name, link) {
-            Ok((ref ttl, ref mut attr)) => {
+            Ok((ttl, attr)) => {
                 let (ino, generation) = self.inodes.add(Arc::new(parent_path.join(name)));
-                attr.ino = ino;
-                reply.entry(ttl, attr, generation)
+                reply.entry(&ttl, &fuse_fileattr(attr, ino), generation)
             },
             Err(e) => reply.error(e),
         }
@@ -278,12 +292,11 @@ impl<T: FilesystemMT + Sync + Send + 'static> fuse::Filesystem for FuseMT<T> {
         let newparent_path = get_path!(self, newparent, reply);
         debug!("link: {:?} -> {:?}/{:?}", path, newparent_path, newname);
         match self.target.link(req.info(), &path, &newparent_path, newname) {
-            Ok((ref ttl, ref mut attr)) => {
+            Ok((ttl, attr)) => {
                 // NOTE: this results in the new link having a different inode from the original.
                 // This is needed because our inode table is a 1:1 map between paths and inodes.
                 let (new_ino, generation) = self.inodes.add(Arc::new(newparent_path.join(newname)));
-                attr.ino = new_ino;
-                reply.entry(ttl, attr, generation);
+                reply.entry(&ttl, &fuse_fileattr(attr, new_ino), generation);
             },
             Err(e) => reply.error(e),
         }
@@ -552,10 +565,10 @@ impl<T: FilesystemMT + Sync + Send + 'static> fuse::Filesystem for FuseMT<T> {
         let parent_path = get_path!(self, parent, reply);
         debug!("create: {:?}/{:?} (mode={:#o}, flags={:#x})", parent_path, name, mode, flags);
         match self.target.create(req.info(), &parent_path, name, mode, flags) {
-            Ok(mut create) => {
+            Ok(create) => {
                 let (ino, generation) = self.inodes.add(Arc::new(parent_path.join(name)));
-                create.attr.ino = ino;
-                reply.created(&create.ttl, &create.attr, generation, create.fh, create.flags);
+                let attr = fuse_fileattr(create.attr, ino);
+                reply.created(&create.ttl, &attr, generation, create.fh, create.flags);
             },
             Err(e) => reply.error(e),
         }
