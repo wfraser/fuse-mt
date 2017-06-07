@@ -54,6 +54,7 @@ pub struct Statfs {
 }
 
 /// File attributes.
+#[derive(Clone, Copy, Debug)]
 pub struct FileAttr {
     /// Size in bytes
     pub size: u64,

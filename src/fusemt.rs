@@ -32,7 +32,6 @@ impl<'a> IntoRequestInfo for fuse::Request<'a> {
     }
 }
 
-#[derive(Copy, Debug)]
 fn fuse_fileattr(attr: FileAttr, ino: u64) -> fuse::FileAttr {
     fuse::FileAttr {
         ino: ino,
