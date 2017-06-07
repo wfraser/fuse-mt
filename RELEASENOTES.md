@@ -1,3 +1,6 @@
+v0.4.1: 2017-06-06
+  * Added basic derives (Clone, Copy, Debug) for types as appropriate.
+
 v0.4.0: 2017-05-29
   * Removed `FilesystemMT::lookup`. See #10.
   * Removed the `ino` field of `FileAttr`. See #12.
