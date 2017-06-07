@@ -32,6 +32,7 @@ impl<'a> IntoRequestInfo for fuse::Request<'a> {
     }
 }
 
+#[derive(Copy, Debug)]
 fn fuse_fileattr(attr: FileAttr, ino: u64) -> fuse::FileAttr {
     fuse::FileAttr {
         ino: ino,
@@ -51,6 +52,7 @@ fn fuse_fileattr(attr: FileAttr, ino: u64) -> fuse::FileAttr {
     }
 }
 
+#[derive(Debug)]
 pub struct FuseMT<T> {
     target: Arc<T>,
     inodes: InodeTable,

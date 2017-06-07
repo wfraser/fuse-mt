@@ -11,6 +11,7 @@ use libc;
 use time::Timespec;
 
 /// Info about a request.
+#[derive(Clone, Copy, Debug)]
 pub struct RequestInfo {
     /// The unique ID assigned to this request by FUSE.
     pub unique: u64,
@@ -23,6 +24,7 @@ pub struct RequestInfo {
 }
 
 /// A directory entry.
+#[derive(Clone, Debug)]
 pub struct DirectoryEntry {
     /// Name of the entry
     pub name: OsString,
@@ -31,6 +33,7 @@ pub struct DirectoryEntry {
 }
 
 /// Filesystem statistics.
+#[derive(Clone, Copy, Debug)]
 pub struct Statfs {
     /// Total data blocks in the filesystem
     pub blocks: u64,
@@ -82,6 +85,7 @@ pub struct FileAttr {
 
 /// The return value for `create`: contains info on the newly-created file, as well as a handle to
 /// the opened file.
+#[derive(Clone, Debug)]
 pub struct CreatedEntry {
     pub ttl: Timespec,
     pub attr: FileAttr,
@@ -91,6 +95,7 @@ pub struct CreatedEntry {
 
 /// Represents the return value from the `listxattr` and `getxattr` calls, which can be either a
 /// size or contain data, depending on how they are called.
+#[derive(Clone, Debug)]
 pub enum Xattr {
     Size(u32),
     Data(Vec<u8>),

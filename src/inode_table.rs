@@ -223,7 +223,8 @@ impl InodeTable {
     }
 }
 
-// Facilitates comparing Rc<PathBuf> and &Path
+/// Facilitates comparing Rc<PathBuf> and &Path
+#[derive(Debug)]
 struct Pathish {
     inner: Path,
 }
