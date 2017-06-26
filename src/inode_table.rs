@@ -164,7 +164,7 @@ impl InodeTable {
 
         {
             let entry = &mut self.table[idx];
-            println!("forget entry {:?}", entry);
+            debug!("forget entry {:?}", entry);
             assert!(n <= entry.lookups);
             entry.lookups -= n;
             lookups = entry.lookups;
