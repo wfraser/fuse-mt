@@ -169,7 +169,13 @@ impl<T: FilesystemMT + Sync + Send + 'static> fuse::Filesystem for FuseMT<T> {
         // TODO: figure out what C FUSE does when only some of these are implemented.
 
         if let Some(mode) = mode {
-            if let Err(e) = self.target.chmod(req.info(), &path, fh, mode) {
+            if mode & !0x8FFF != 0 {
+                // This *should* never happen. The system should have done the masking already.
+                error!("setattr on {:?} provided mode with extra bits set: {:#x}", path, mode);
+                reply.error(libc::EINVAL);
+                return;
+            }
+            if let Err(e) = self.target.chmod(req.info(), &path, fh, mode as u16) {
                 reply.error(e);
                 return;
             }

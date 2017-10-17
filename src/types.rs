@@ -150,8 +150,8 @@ pub trait FilesystemMT {
     /// Change the mode of a filesystem entry.
     ///
     /// * `fh`: a file handle if this is called on an open file.
-    /// * `mode`: the mode to change the file to.
-    fn chmod(&self, _req: RequestInfo, _path: &Path, _fh: Option<u64>, _mode: u32) -> ResultEmpty {
+    /// * `mode`: the mode to change the file to. Only the bits in 0x8FFF will ever be set.
+    fn chmod(&self, _req: RequestInfo, _path: &Path, _fh: Option<u64>, _mode: u16) -> ResultEmpty {
         Err(libc::ENOSYS)
     }
 
