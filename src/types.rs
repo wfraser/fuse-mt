@@ -12,57 +12,100 @@ use futures::*;
 use libc;
 use time::Timespec;
 
-/// Info about a request:
-///
-/// * `unique`: the unique ID assigned to this request by FUSE.
-/// * `uid`: the user ID of the process making the request.
-/// * `gid`: the group ID of the process making the request.
-/// * `pid`: the process ID of the process making the request.
+/// Info about a request.
+#[derive(Clone, Copy, Debug)]
 pub struct RequestInfo {
+    /// The unique ID assigned to this request by FUSE.
     pub unique: u64,
+    /// The user ID of the process making the request.
     pub uid: u32,
+    /// The group ID of the process making the request.
     pub gid: u32,
+    /// The process ID of the process making the request.
     pub pid: u32,
 }
 
 /// A directory entry.
-///
-/// * `name`: the name of the entry
-/// * `kind`:
+#[derive(Clone, Debug)]
 pub struct DirectoryEntry {
+    /// Name of the entry
     pub name: OsString,
+    /// Kind of file (directory, file, pipe, etc.)
     pub kind: fuse::FileType,
 }
 
+/// Filesystem statistics.
+#[derive(Clone, Copy, Debug)]
 pub struct Statfs {
+    /// Total data blocks in the filesystem
     pub blocks: u64,
+    /// Free blocks in filesystem
     pub bfree: u64,
+    /// Free blocks available to unprivileged user
     pub bavail: u64,
+    /// Total file nodes in filesystem
     pub files: u64,
+    /// Free file nodes in filesystem
     pub ffree: u64,
+    /// Optimal transfer block size
     pub bsize: u32,
+    /// Maximum length of filenames
     pub namelen: u32,
+    /// Fragment size
     pub frsize: u32,
+}
+
+/// File attributes.
+#[derive(Clone, Copy, Debug)]
+pub struct FileAttr {
+    /// Size in bytes
+    pub size: u64,
+    /// Size in blocks
+    pub blocks: u64,
+    /// Time of last access
+    pub atime: Timespec,
+    /// Time of last modification
+    pub mtime: Timespec,
+    /// Time of last metadata change
+    pub ctime: Timespec,
+    /// Time of creation (macOS only)
+    pub crtime: Timespec,
+    /// Kind of file (directory, file, pipe, etc.)
+    pub kind: fuse::FileType,
+    /// Permissions
+    pub perm: u16,
+    /// Number of hard links
+    pub nlink: u32,
+    /// User ID
+    pub uid: u32,
+    /// Group ID
+    pub gid: u32,
+    /// Device ID (if special file)
+    pub rdev: u32,
+    /// Flags (macOS only; see chflags(2))
+    pub flags: u32,
 }
 
 /// The return value for `create`: contains info on the newly-created file, as well as a handle to
 /// the opened file.
+#[derive(Clone, Debug)]
 pub struct CreatedEntry {
     pub ttl: Timespec,
-    pub attr: fuse::FileAttr,
+    pub attr: FileAttr,
     pub fh: u64,
     pub flags: u32,
 }
 
 /// Represents the return value from the `listxattr` and `getxattr` calls, which can be either a
 /// size or contain data, depending on how they are called.
+#[derive(Clone, Debug)]
 pub enum Xattr {
     Size(u32),
     Data(Vec<u8>),
 }
 
 pub type ResultEmpty = Result<(), libc::c_int>;
-pub type ResultEntry = Result<(Timespec, fuse::FileAttr), libc::c_int>;
+pub type ResultEntry = Result<(Timespec, FileAttr), libc::c_int>;
 pub type ResultOpen = Result<(u64, u32), libc::c_int>;
 pub type ResultReaddir = Result<Vec<DirectoryEntry>, libc::c_int>;
 pub type ResultData = Result<Vec<u8>, libc::c_int>;
@@ -88,14 +131,6 @@ pub trait FilesystemMT {
     /// Called on filesystem unmount.
     fn destroy(&self, _req: RequestInfo) {
         // Nothing.
-    }
-
-    /// Look up a filesystem entry and get its attributes.
-    ///
-    /// * `parent`: path to the parent of the entry being looked up
-    /// * `name`: the name of the entry (under `parent`) being looked up.
-    fn lookup(&self, _req: RequestInfo, _parent: &Path, _name: &OsStr) -> ResultEntry {
-        Err(libc::ENOSYS)
     }
 
     /// Get the attributes of a filesystem entry.

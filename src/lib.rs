@@ -30,7 +30,7 @@ mod types;
 
 pub const VERSION: &'static str = env!("CARGO_PKG_VERSION");
 
-pub use fuse::{FileAttr, FileType, mount, spawn_mount};
+pub use fuse::{FileType, mount, spawn_mount};
 
 pub use fusemt::*;
 pub use types::*;

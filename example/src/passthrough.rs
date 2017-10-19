@@ -50,7 +50,6 @@ fn stat_to_fuse(stat: libc::stat64) -> FileAttr {
     let mode = stat.st_mode & 0o7777; // st_mode encodes the type AND the mode.
 
     FileAttr {
-        ino: 0,
         size: stat.st_size as u64,
         blocks: stat.st_blocks as u64,
         atime: Timespec { sec: stat.st_atime as i64, nsec: stat.st_atime_nsec as i32 },
@@ -144,19 +143,6 @@ impl FilesystemMT for PassthroughFS {
                 Ok(attr) => Ok((TTL, attr)),
                 Err(e) => Err(e.raw_os_error().unwrap())
             }
-        }
-    }
-
-    fn lookup(&self, _req: RequestInfo, parent: &Path, name: &OsStr) -> ResultEntry {
-        debug!("lookup: {:?}/{:?}", parent, name);
-
-        let path = PathBuf::from(parent).join(name);
-        match self.stat_real(&path) {
-            Ok(attr) => Ok((TTL, attr)),
-            Err(e) => {
-                error!("stat_real({:?}): {}", path, e);
-                Err(e.raw_os_error().unwrap())
-            },
         }
     }
 
