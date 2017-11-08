@@ -312,22 +312,32 @@ impl<T: FilesystemMT + Sync + Send + 'static> fuse::Filesystem for FuseMT<T> {
         }
     }
 
-    fn read(&mut self, req: &fuse::Request, ino: u64, fh: u64, offset: u64, size: u32, reply: fuse::ReplyData) {
+    fn read(&mut self, req: &fuse::Request, ino: u64, fh: u64, offset: i64, size: u32, reply: fuse::ReplyData) {
         let path = get_path!(self, ino, reply);
         debug!("read: {:?} {:#x} @ {:#x}", path, size, offset);
+        if offset < 0 {
+            error!("read called with a negative offset");
+            reply.error(libc::EINVAL);
+            return;
+        }
         let target = self.target.clone();
         let req_info = req.info();
         self.threadpool_run(move || {
-            match target.read(req_info, &path, fh, offset, size) {
+            match target.read(req_info, &path, fh, offset as u64, size) {
                 Ok(ref data) => reply.data(data),
                 Err(e) => reply.error(e),
             }
         });
     }
 
-    fn write(&mut self, req: &fuse::Request, ino: u64, fh: u64, offset: u64, data: &[u8], flags: u32, reply: fuse::ReplyWrite) {
+    fn write(&mut self, req: &fuse::Request, ino: u64, fh: u64, offset: i64, data: &[u8], flags: u32, reply: fuse::ReplyWrite) {
         let path = get_path!(self, ino, reply);
         debug!("write: {:?} {:#x} @ {:#x}", path, data.len(), offset);
+        if offset < 0 {
+            error!("write called with a negative offset");
+            reply.error(libc::EINVAL);
+            return;
+        }
         let target = self.target.clone();
         let req_info = req.info();
 
@@ -336,7 +346,7 @@ impl<T: FilesystemMT + Sync + Send + 'static> fuse::Filesystem for FuseMT<T> {
         let data_buf = Vec::from(data);
 
         self.threadpool_run(move|| {
-            match target.write(req_info, &path, fh, offset, data_buf, flags) {
+            match target.write(req_info, &path, fh, offset as u64, data_buf, flags) {
                 Ok(written) => reply.written(written),
                 Err(e) => reply.error(e),
             }
@@ -390,9 +400,15 @@ impl<T: FilesystemMT + Sync + Send + 'static> fuse::Filesystem for FuseMT<T> {
         }
     }
 
-    fn readdir(&mut self, req: &fuse::Request, ino: u64, fh: u64, offset: u64, mut reply: fuse::ReplyDirectory) {
+    fn readdir(&mut self, req: &fuse::Request, ino: u64, fh: u64, offset: i64, mut reply: fuse::ReplyDirectory) {
         let path = get_path!(self, ino, reply);
         debug!("readdir: {:?} @ {}", path, offset);
+
+        if offset < 0 {
+            error!("readdir called with a negative offset");
+            reply.error(libc::EINVAL);
+            return;
+        }
 
         let entries: &[DirectoryEntry] = {
             let dcache_entry = self.directory_cache.get_mut(fh);
@@ -441,11 +457,11 @@ impl<T: FilesystemMT + Sync + Send + 'static> fuse::Filesystem for FuseMT<T> {
                 !(1 as Inode)
             };
 
-            debug!("readdir: adding entry #{}, {:?}", offset + index as u64, entry.name);
+            debug!("readdir: adding entry #{}, {:?}", offset + index as i64, entry.name);
 
             let buffer_full: bool = reply.add(
                 entry_inode,
-                offset + index as u64 + 1,
+                offset + index as i64 + 1,
                 entry.kind,
                 entry.name.as_os_str());
 

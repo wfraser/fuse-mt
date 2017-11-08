@@ -30,13 +30,7 @@ fn mode_to_filetype(mode: libc::mode_t) -> FileType {
         libc::S_IFBLK => FileType::BlockDevice,
         libc::S_IFCHR => FileType::CharDevice,
         libc::S_IFIFO  => FileType::NamedPipe,
-        libc::S_IFSOCK => {
-            warn!("FUSE doesn't yet support Socket file type; translating to NamedPipe instead.");
-            FileType::NamedPipe
-        },
-        // This is committed to rust-fuse but not yet released.
-        // See: https://github.com/zargony/rust-fuse/pull/79
-        //libc::S_IFSOCK => FileType::Socket,
+        libc::S_IFSOCK => FileType::Socket,
         _ => { panic!("unknown file type"); }
     }
 }
