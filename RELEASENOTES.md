@@ -1,3 +1,10 @@
+v0.4.3: 2017-11-08
+  * Implemented socket file type support from rust-fuse.
+  * u64 -> i64 offset type changed in rust-fuse; fuse-mt's type is unchanged.
+
+v0.4.2: 2017-10-30
+  * Fixed a bug that caused 'forget' log messages on stdout.
+
 v0.4.1: 2017-06-06
   * Added basic derives (Clone, Copy, Debug) for types as appropriate.
 

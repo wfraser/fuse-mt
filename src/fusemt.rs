@@ -339,11 +339,18 @@ impl<T: FilesystemMT + Sync + Send + 'static> fuse::Filesystem for FuseMT<T> {
         }
     }
 
-    fn read(&mut self, req: &fuse::Request, ino: u64, fh: u64, offset: u64, size: u32, reply: fuse::ReplyData) {
+    fn read(&mut self, req: &fuse::Request, ino: u64, fh: u64, offset: i64, size: u32, reply: fuse::ReplyData) {
         let path = get_path!(self, ino, reply);
         debug!("read: {:?} {:#x} @ {:#x}", path, size, offset);
+        if offset < 0 {
+            error!("read called with a negative offset");
+            reply.error(libc::EINVAL);
+            return;
+        }
         let req_info = req.info();
-        let f = self.target.read(req_info, path.clone(), fh, offset, size).then(move |result| {
+        let f = self.target.read(req_info, path.clone(), fh, offset as u64, size)
+                .then(move |result|
+        {
             debug!("read finished");
             match result {
                 Ok(ref data) => reply.data(data),
@@ -354,16 +361,23 @@ impl<T: FilesystemMT + Sync + Send + 'static> fuse::Filesystem for FuseMT<T> {
         self.reactor().spawn(|_| f);
     }
 
-    fn write(&mut self, req: &fuse::Request, ino: u64, fh: u64, offset: u64, data: &[u8], flags: u32, reply: fuse::ReplyWrite) {
+    fn write(&mut self, req: &fuse::Request, ino: u64, fh: u64, offset: i64, data: &[u8], flags: u32, reply: fuse::ReplyWrite) {
         let path = get_path!(self, ino, reply);
         debug!("write: {:?} {:#x} @ {:#x}", path, data.len(), offset);
+        if offset < 0 {
+            error!("write called with a negative offset");
+            reply.error(libc::EINVAL);
+            return;
+        }
         let req_info = req.info();
 
         // The data needs to be copied here before dispatching to the threadpool because it's a
         // slice of a single buffer that `rust-fuse` re-uses for the entire session.
         let data_buf = Vec::from(data);
 
-        let f = self.target.write(req_info, path.clone(), fh, offset, data_buf, flags).then(move |result| {
+        let f = self.target.write(req_info, path.clone(), fh, offset as u64, data_buf, flags)
+                .then(move |result|
+        {
             match result {
                 Ok(written) => reply.written(written),
                 Err(e) => reply.error(e),
@@ -377,7 +391,9 @@ impl<T: FilesystemMT + Sync + Send + 'static> fuse::Filesystem for FuseMT<T> {
         let path = get_path!(self, ino, reply);
         debug!("flush: {:?}", path);
         let req_info = req.info();
-        let f = self.target.flush(req_info, path.clone(), fh, lock_owner).then(move |result| {
+        let f = self.target.flush(req_info, path.clone(), fh, lock_owner)
+                .then(move |result|
+        {
             match result {
                 Ok(()) => reply.ok(),
                 Err(e) => reply.error(e),
@@ -400,7 +416,9 @@ impl<T: FilesystemMT + Sync + Send + 'static> fuse::Filesystem for FuseMT<T> {
         let path = get_path!(self, ino, reply);
         debug!("fsync: {:?}", path);
         let req_info = req.info();
-        let f = self.target.fsync(req_info, path.clone(), fh, datasync).then(move |result| {
+        let f = self.target.fsync(req_info, path.clone(), fh, datasync)
+                .then(move |result|
+        {
             match result {
                 Ok(()) => reply.ok(),
                 Err(e) => reply.error(e),
@@ -422,9 +440,15 @@ impl<T: FilesystemMT + Sync + Send + 'static> fuse::Filesystem for FuseMT<T> {
         }
     }
 
-    fn readdir(&mut self, req: &fuse::Request, ino: u64, fh: u64, offset: u64, mut reply: fuse::ReplyDirectory) {
+    fn readdir(&mut self, req: &fuse::Request, ino: u64, fh: u64, offset: i64, mut reply: fuse::ReplyDirectory) {
         let path = get_path!(self, ino, reply);
         debug!("readdir: {:?} @ {}", path, offset);
+
+        if offset < 0 {
+            error!("readdir called with a negative offset");
+            reply.error(libc::EINVAL);
+            return;
+        }
 
         let entries: &[DirectoryEntry] = {
             let dcache_entry = self.directory_cache.get_mut(fh);
@@ -473,11 +497,11 @@ impl<T: FilesystemMT + Sync + Send + 'static> fuse::Filesystem for FuseMT<T> {
                 !(1 as Inode)
             };
 
-            debug!("readdir: adding entry #{}, {:?}", offset + index as u64, entry.name);
+            debug!("readdir: adding entry #{}, {:?}", offset + index as i64, entry.name);
 
             let buffer_full: bool = reply.add(
                 entry_inode,
-                offset + index as u64 + 1,
+                offset + index as i64 + 1,
                 entry.kind,
                 entry.name.as_os_str());
 
