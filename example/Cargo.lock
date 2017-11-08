@@ -12,7 +12,7 @@ dependencies = [
 
 [[package]]
 name = "fuse_mt"
-version = "0.4.2"
+version = "0.4.3"
 dependencies = [
  "fuse 0.3.1 (registry+https://github.com/rust-lang/crates.io-index)",
  "libc 0.2.33 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -52,7 +52,7 @@ dependencies = [
 name = "passthrufs"
 version = "0.1.0"
 dependencies = [
- "fuse_mt 0.4.2",
+ "fuse_mt 0.4.3",
  "libc 0.2.33 (registry+https://github.com/rust-lang/crates.io-index)",
  "log 0.3.8 (registry+https://github.com/rust-lang/crates.io-index)",
  "time 0.1.38 (registry+https://github.com/rust-lang/crates.io-index)",
