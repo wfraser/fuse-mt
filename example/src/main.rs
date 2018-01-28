@@ -21,21 +21,22 @@ mod passthrough;
 struct ConsoleLogger;
 
 impl log::Log for ConsoleLogger {
-    fn enabled(&self, _metadata: &log::LogMetadata) -> bool {
-        //metadata.level() >= log::LogLevel::Debug
+    fn enabled(&self, _metadata: &log::Metadata) -> bool {
         true
     }
 
-    fn log(&self, record: &log::LogRecord) {
+    fn log(&self, record: &log::Record) {
         println!("{}: {}: {}", record.target(), record.level(), record.args());
     }
+
+    fn flush(&self) {}
 }
 
+static LOGGER: ConsoleLogger = ConsoleLogger;
+
 fn main() {
-    log::set_logger(|max_log_level| {
-        max_log_level.set(log::LogLevelFilter::Debug);
-        Box::new(ConsoleLogger)
-    }).unwrap();
+    log::set_logger(&LOGGER).unwrap();
+    log::set_max_level(log::LevelFilter::Debug);
 
     let args: Vec<OsString> = env::args_os().collect();
 
