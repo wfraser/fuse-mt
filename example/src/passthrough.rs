@@ -644,6 +644,16 @@ impl FilesystemMT for PassthroughFS {
         let real = self.real_path(path);
         libc_wrappers::lremovexattr(real, name.to_owned())
     }
+
+    #[cfg(target_os = "macos")]
+    fn getxtimes(&self, _req: RequestInfo, path: &Path) -> ResultXTimes {
+        debug!("getxtimes: {:?}", path);
+        let xtimes = XTimes {
+            bkuptime: Timespec { sec: 0, nsec: 0 },
+            crtime:   Timespec { sec: 0, nsec: 0 },
+        };
+        Ok(xtimes)
+    }
 }
 
 /// A file that is not closed upon leaving scope.

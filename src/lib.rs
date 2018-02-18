@@ -14,6 +14,9 @@
 // Copyright (c) 2016-2017 by William R. Fraser
 //
 
+// silence some unhelpful clippy lints
+#![allow(unknown_lints, clone_on_ref_ptr)]
+
 extern crate fuse;
 extern crate libc;
 extern crate threadpool;
@@ -27,7 +30,7 @@ mod fusemt;
 mod inode_table;
 mod types;
 
-pub const VERSION: &'static str = env!("CARGO_PKG_VERSION");
+pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 
 pub use fuse::{FileType, mount, spawn_mount};
 

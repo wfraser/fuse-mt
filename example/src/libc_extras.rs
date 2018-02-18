@@ -79,7 +79,7 @@ pub mod libc {
     pub unsafe fn futimens(fd: c_int, times: *const timespec) -> c_int {
         use super::super::libc_wrappers;
         let mut times_osx = [timespec_to_timeval(&*times),
-                             timespec_to_timeval(&*times.offset(1))];
+                             timespec_to_timeval(&*times)];
 
         let mut stat: Option<stat> = None;
 
@@ -115,13 +115,15 @@ pub mod libc {
     // Mac OS X does not support utimensat; map it to lutimes with lower precision.
     // The relative path feature of utimensat is not supported by this workaround.
     #[cfg(target_os = "macos")]
-    pub fn utimensat(_dirfd_ignored: c_int, path: *const c_char, times: *const timespec,
+    pub fn utimensat(dirfd: c_int, path: *const c_char, times: *const timespec,
                      _flag_ignored: c_int) -> c_int {
         use super::super::libc_wrappers;
         unsafe {
-            assert_eq!(*path, b'/' as c_char); // relative paths are not supported here!
+            if dirfd != AT_FDCWD {
+                assert_eq!(*path, b'/' as c_char, "relative paths are not supported here!");
+            }
             let mut times_osx = [timespec_to_timeval(&*times),
-                                 timespec_to_timeval(&*times.offset(1))];
+                                 timespec_to_timeval(&*times)];
 
             let mut stat: Option<stat> = None;
             fn stat_if_needed(path: *const c_char, stat: &mut Option<stat>) -> Result<(), c_int> {
