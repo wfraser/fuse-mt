@@ -1,3 +1,6 @@
+v0.4.4: 2018-02-18
+  * Implemented `getxtimes` and `setvolname` for macOS
+
 v0.4.3: 2017-11-08
   * Implemented socket file type support from rust-fuse.
   * u64 -> i64 offset type changed in rust-fuse; fuse-mt's type is unchanged.
