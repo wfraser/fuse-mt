@@ -646,6 +646,12 @@ impl FilesystemMT for PassthroughFS {
     }
 
     #[cfg(target_os = "macos")]
+    fn setvolname(&self, _req: RequestInfo, name: &OsStr) -> ResultEmpty {
+        info!("setvolname: {:?}", name);
+        Err(libc::ENOTSUP)
+    }
+
+    #[cfg(target_os = "macos")]
     fn getxtimes(&self, _req: RequestInfo, path: &Path) -> ResultXTimes {
         debug!("getxtimes: {:?}", path);
         let xtimes = XTimes {

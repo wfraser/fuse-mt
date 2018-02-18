@@ -464,7 +464,13 @@ pub trait FilesystemMT {
 
     // bmap
 
-    // setvolname (macOS only)
+    /// macOS only: Rename the volume.
+    ///
+    /// * `name`: new name for the volume
+    #[cfg(target_os = "macos")]
+    fn setvolname(&self, _req: RequestInfo, _name: &OsStr) -> ResultEmpty {
+        Err(libc::ENOSYS)
+    }
 
     // exchange (macOS only, undocumented)
 
