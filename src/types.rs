@@ -104,6 +104,13 @@ pub enum Xattr {
     Data(Vec<u8>),
 }
 
+#[cfg(target_os = "macos")]
+#[derive(Clone, Debug)]
+pub struct XTimes {
+    pub bkuptime: Timespec,
+    pub crtime: Timespec,
+}
+
 pub type ResultEmpty = Result<(), libc::c_int>;
 pub type ResultEntry = Result<(Timespec, FileAttr), libc::c_int>;
 pub type ResultOpen = Result<(u64, u32), libc::c_int>;
@@ -113,6 +120,9 @@ pub type ResultWrite = Result<u32, libc::c_int>;
 pub type ResultStatfs = Result<Statfs, libc::c_int>;
 pub type ResultCreate = Result<CreatedEntry, libc::c_int>;
 pub type ResultXattr = Result<Xattr, libc::c_int>;
+
+#[cfg(target_os = "macos")]
+pub type ResultXTimes = Result<XTimes, libc::c_int>;
 
 #[deprecated(since = "0.3.0", note = "use ResultEntry instead")]
 pub type ResultGetattr = ResultEntry;
@@ -459,4 +469,24 @@ pub trait FilesystemMT {
     // setlk
 
     // bmap
+
+    /// macOS only: Rename the volume.
+    ///
+    /// * `name`: new name for the volume
+    #[cfg(target_os = "macos")]
+    fn setvolname(&self, _req: RequestInfo, _name: &OsStr) -> ResultEmpty {
+        Err(libc::ENOSYS)
+    }
+
+    // exchange (macOS only, undocumented)
+
+    /// macOS only: Query extended times (bkuptime and crtime).
+    ///
+    /// * `path`: path to the file to get the times for.
+    ///
+    /// Return an `XTimes` struct with the times, or other error code as appropriate.
+    #[cfg(target_os = "macos")]
+    fn getxtimes(&self, _req: RequestInfo, _path: &Path) -> ResultXTimes {
+        Err(libc::ENOSYS)
+    }
 }

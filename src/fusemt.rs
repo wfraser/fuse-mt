@@ -636,4 +636,27 @@ impl<T: FilesystemMT + Sync + Send + 'static> fuse::Filesystem for FuseMT<T> {
     // setlk
 
     // bmap
+
+    #[cfg(target_os = "macos")]
+    fn setvolname(&mut self, req: &fuse::Request, name: &OsStr, reply: fuse::ReplyEmpty) {
+        debug!("setvolname: {:?}", name);
+        match self.target.setvolname(req.info(), name) {
+            Ok(()) => reply.ok(),
+            Err(e) => reply.error(e),
+        }
+    }
+
+    // exchange (macOS only, undocumented)
+
+    #[cfg(target_os = "macos")]
+    fn getxtimes(&mut self, req: &fuse::Request, ino: u64, reply: fuse::ReplyXTimes) {
+        let path = get_path!(self, ino, reply);
+        debug!("getxtimes: {:?}", path);
+        match self.target.getxtimes(req.info(), &path) {
+            Ok(xtimes) => {
+                reply.xtimes(xtimes.bkuptime, xtimes.crtime);
+            }
+            Err(e) => reply.error(e),
+        }
+    }
 }

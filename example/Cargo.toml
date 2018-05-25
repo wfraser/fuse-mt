@@ -2,10 +2,11 @@
 name = "passthrufs"
 version = "0.1.0"
 authors = ["William R. Fraser <wfraser@codewise.org>"]
+workspace = ".."
 
 [dependencies]
 libc = "0.2"
-log = "0.3"
+log = "0.4"
 time = "0.1"
 fuse_mt = { path = ".." }
 futures = "0.1"
