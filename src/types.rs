@@ -182,7 +182,7 @@ pub trait FilesystemMT {
     }
 
     /// Set timestamps of a filesystem entry (with extra options only used on MacOS).
-    #[allow(unknown_lints, too_many_arguments)]
+    #[allow(clippy::too_many_arguments)]
     fn utimens_macos(&self, _req: RequestInfo, _path: &Path, _fh: Option<u64>, _crtime: Option<Timespec>, _chgtime: Option<Timespec>, _bkuptime: Option<Timespec>, _flags: Option<u32>) -> ResultEmpty {
         Err(libc::ENOSYS)
     }

@@ -2,7 +2,7 @@
 //
 // Implemented using fuse_mt::FilesystemMT.
 //
-// Copyright (c) 2016-2017 by William R. Fraser
+// Copyright (c) 2016-2019 by William R. Fraser
 //
 
 use std::ffi::{CStr, CString, OsStr, OsString};
@@ -47,9 +47,9 @@ fn stat_to_fuse(stat: libc::stat64) -> FileAttr {
         mtime: Timespec { sec: stat.st_mtime as i64, nsec: stat.st_mtime_nsec as i32 },
         ctime: Timespec { sec: stat.st_ctime as i64, nsec: stat.st_ctime_nsec as i32 },
         crtime: Timespec { sec: 0, nsec: 0 },
-        kind: kind,
+        kind,
         perm: mode as u16,
-        nlink: stat.st_nlink as u32,
+        nlink: u32::from(stat.st_nlink),
         uid: stat.st_uid,
         gid: stat.st_gid,
         rdev: stat.st_rdev as u32,
@@ -196,7 +196,7 @@ impl FilesystemMT for PassthroughFS {
                     };
 
                     entries.push(DirectoryEntry {
-                        name: name,
+                        name,
                         kind: filetype,
                     })
                 },
@@ -374,7 +374,7 @@ impl FilesystemMT for PassthroughFS {
             if let Some(time) = time {
                 libc::timespec {
                     tv_sec: time.sec as libc::time_t,
-                    tv_nsec: time.nsec as libc::time_t,
+                    tv_nsec: libc::time_t::from(time.nsec),
                 }
             } else {
                 libc::timespec {
@@ -589,7 +589,7 @@ impl FilesystemMT for PassthroughFS {
                     ttl: TTL,
                     attr: stat_to_fuse(attr),
                     fh: fd as u64,
-                    flags: flags,
+                    flags,
                 }),
                 Err(e) => {
                     error!("lstat after create({:?}): {}", real, io::Error::from_raw_os_error(e));

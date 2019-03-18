@@ -11,11 +11,8 @@
 //! example, a read-only filesystem can skip implementing the `write` call and many others.
 
 //
-// Copyright (c) 2016-2017 by William R. Fraser
+// Copyright (c) 2016-2019 by William R. Fraser
 //
-
-// silence some unhelpful clippy lints
-#![allow(unknown_lints, clone_on_ref_ptr)]
 
 extern crate fuse;
 extern crate libc;

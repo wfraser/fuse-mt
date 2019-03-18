@@ -1,6 +1,6 @@
 // Libc Wrappers :: Safe wrappers around system calls.
 //
-// Copyright (c) 2016-2017 by William R. Fraser
+// Copyright (c) 2016-2019 by William R. Fraser
 //
 
 use std::ffi::{CString, OsString};
@@ -104,7 +104,7 @@ pub fn llistxattr(path: OsString, buf: &mut [u8]) -> Result<usize, libc::c_int> 
     let path_c = into_cstring!(path, "llistxattr");
 
     let result = unsafe {
-        libc::llistxattr(path_c.as_ptr(), mem::transmute(buf.as_mut_ptr()), buf.len())
+        libc::llistxattr(path_c.as_ptr(), buf.as_mut_ptr() as *mut libc::c_char, buf.len())
     };
     match result {
         -1 => Err(io::Error::last_os_error().raw_os_error().unwrap()),
@@ -117,7 +117,7 @@ pub fn lgetxattr(path: OsString, name: OsString, buf: &mut [u8]) -> Result<usize
     let name_c = into_cstring!(name, "lgetxattr");
 
     let result = unsafe {
-        libc::lgetxattr(path_c.as_ptr(), name_c.as_ptr(), mem::transmute(buf.as_mut_ptr()),
+        libc::lgetxattr(path_c.as_ptr(), name_c.as_ptr(), buf.as_mut_ptr() as *mut libc::c_void,
             buf.len())
     };
     match result {
@@ -151,7 +151,7 @@ pub fn lsetxattr(path: OsString, name: OsString, value: &[u8], flags: u32, posit
     }
 
     let result = unsafe {
-        real(path_c.as_ptr(), name_c.as_ptr(), mem::transmute(value.as_ptr()),
+        real(path_c.as_ptr(), name_c.as_ptr(), value.as_ptr() as *const libc::c_void,
              value.len(), flags as libc::c_int, position)
     };
 

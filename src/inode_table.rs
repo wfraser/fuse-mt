@@ -1,6 +1,6 @@
 // InodeTable :: a bi-directional map of paths to inodes.
 //
-// Copyright (c) 2016-2017 by William R. Fraser
+// Copyright (c) 2016-2019 by William R. Fraser
 //
 
 use std::borrow::Borrow;
@@ -231,7 +231,7 @@ struct Pathish {
 
 impl Pathish {
     pub fn new(p: &Path) -> &Pathish {
-        unsafe { ::std::mem::transmute(p) }
+        unsafe { &*(p as *const _ as *const Pathish) }
     }
 }
 
