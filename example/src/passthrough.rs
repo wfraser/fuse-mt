@@ -36,9 +36,9 @@ fn mode_to_filetype(mode: libc::mode_t) -> FileType {
 }
 
 fn stat_to_fuse(stat: libc::stat64) -> FileAttr {
+    // st_mode encodes both the kind and the permissions
     let kind = mode_to_filetype(stat.st_mode);
-
-    let mode = stat.st_mode & 0o7777; // st_mode encodes the type AND the mode.
+    let perm = (stat.st_mode & 0o7777) as u16;
 
     FileAttr {
         size: stat.st_size as u64,
@@ -48,8 +48,8 @@ fn stat_to_fuse(stat: libc::stat64) -> FileAttr {
         ctime: Timespec { sec: stat.st_ctime as i64, nsec: stat.st_ctime_nsec as i32 },
         crtime: Timespec { sec: 0, nsec: 0 },
         kind,
-        perm: mode as u16,
-        nlink: u32::from(stat.st_nlink),
+        perm,
+        nlink: stat.st_nlink as u32,
         uid: stat.st_uid,
         gid: stat.st_gid,
         rdev: stat.st_rdev as u32,
