@@ -279,8 +279,10 @@ pub trait FilesystemMT {
     /// * `fh`: file handle returned from the `open` call.
     /// * `offset`: offset into the file to start reading.
     /// * `size`: number of bytes to read.
+    /// * `result`: a callback that must be invoked to return the result of the operation: either
+    ///    the result data as a slice, or an error code.
     ///
-    /// Return the bytes read.
+    /// This function has no return value; call the `result` function instead.
     fn read(&self, _req: RequestInfo, _path: &Path, _fh: u64, _offset: u64, _size: u32, result: impl FnOnce(Result<&[u8], libc::c_int>)) {
         result(Err(libc::ENOSYS))
     }
