@@ -229,7 +229,7 @@ impl FilesystemMT for PassthroughFS {
         libc_wrappers::close(fh)
     }
 
-    fn read(&self, _req: RequestInfo, path: &Path, fh: u64, offset: u64, size: u32) -> ResultData {
+    fn read(&self, _req: RequestInfo, path: &Path, fh: u64, offset: u64, size: u32, result: impl FnOnce(Result<&[u8], libc::c_int>)) {
         debug!("read: {:?} {:#x} @ {:#x}", path, size, offset);
         let mut file = unsafe { UnmanagedFile::new(fh) };
 
@@ -238,17 +238,19 @@ impl FilesystemMT for PassthroughFS {
 
         if let Err(e) = file.seek(SeekFrom::Start(offset)) {
             error!("seek({:?}, {}): {}", path, offset, e);
-            return Err(e.raw_os_error().unwrap());
+            result(Err(e.raw_os_error().unwrap()));
+            return;
         }
         match file.read(&mut data) {
             Ok(n) => { data.truncate(n); },
             Err(e) => {
                 error!("read {:?}, {:#x} @ {:#x}: {}", path, size, offset, e);
-                return Err(e.raw_os_error().unwrap());
+                result(Err(e.raw_os_error().unwrap()));
+                return;
             }
         }
 
-        Ok(data)
+        result(Ok(&data));
     }
 
     fn write(&self, _req: RequestInfo, path: &Path, fh: u64, offset: u64, data: Vec<u8>, _flags: u32) -> ResultWrite {

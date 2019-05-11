@@ -281,8 +281,8 @@ pub trait FilesystemMT {
     /// * `size`: number of bytes to read.
     ///
     /// Return the bytes read.
-    fn read(&self, _req: RequestInfo, _path: &Path, _fh: u64, _offset: u64, _size: u32) -> ResultData {
-        Err(libc::ENOSYS)
+    fn read(&self, _req: RequestInfo, _path: &Path, _fh: u64, _offset: u64, _size: u32, result: impl FnOnce(Result<&[u8], libc::c_int>)) {
+        result(Err(libc::ENOSYS))
     }
 
     /// Write to a file.

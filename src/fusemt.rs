@@ -323,10 +323,12 @@ impl<T: FilesystemMT + Sync + Send + 'static> fuse::Filesystem for FuseMT<T> {
         let target = self.target.clone();
         let req_info = req.info();
         self.threadpool_run(move || {
-            match target.read(req_info, &path, fh, offset as u64, size) {
-                Ok(ref data) => reply.data(data),
-                Err(e) => reply.error(e),
-            }
+            target.read(req_info, &path, fh, offset as u64, size, |result| {
+                match result {
+                    Ok(data) => reply.data(data),
+                    Err(e) => reply.error(e),
+                }
+            });
         });
     }
 
