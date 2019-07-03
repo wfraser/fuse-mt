@@ -11,12 +11,12 @@ use std::io::{self, Read, Write, Seek, SeekFrom};
 use std::os::unix::ffi::{OsStrExt, OsStringExt};
 use std::os::unix::io::{FromRawFd, IntoRawFd};
 use std::path::{Path, PathBuf};
+use std::time::{Duration, SystemTime};
 
 use super::libc_extras::libc;
 use super::libc_wrappers;
 
 use fuse_mt::*;
-use time::*;
 
 pub struct PassthroughFS {
     pub target: OsString,
@@ -40,16 +40,26 @@ fn stat_to_fuse(stat: libc::stat64) -> FileAttr {
     let kind = mode_to_filetype(stat.st_mode);
     let perm = (stat.st_mode & 0o7777) as u16;
 
+    let time = |secs: i64, nanos: i64|
+        SystemTime::UNIX_EPOCH + Duration::new(secs as u64, nanos as u32);
+
+    // libc::nlink_t is wildly different sizes on different platforms:
+    // linux amd64: u64
+    // linux x86:   u32
+    // macOS amd64: u16
+    #[allow(clippy::cast_lossless)]
+    let nlink = stat.st_nlink as u32;
+
     FileAttr {
         size: stat.st_size as u64,
         blocks: stat.st_blocks as u64,
-        atime: Timespec { sec: stat.st_atime as i64, nsec: stat.st_atime_nsec as i32 },
-        mtime: Timespec { sec: stat.st_mtime as i64, nsec: stat.st_mtime_nsec as i32 },
-        ctime: Timespec { sec: stat.st_ctime as i64, nsec: stat.st_ctime_nsec as i32 },
-        crtime: Timespec { sec: 0, nsec: 0 },
+        atime: time(stat.st_atime, stat.st_atime_nsec),
+        mtime: time(stat.st_mtime, stat.st_mtime_nsec),
+        ctime: time(stat.st_ctime, stat.st_ctime_nsec),
+        crtime: SystemTime::UNIX_EPOCH,
         kind,
         perm,
-        nlink: stat.st_nlink as u32,
+        nlink,
         uid: stat.st_uid,
         gid: stat.st_gid,
         rdev: stat.st_rdev as u32,
@@ -109,7 +119,7 @@ impl PassthroughFS {
     }
 }
 
-const TTL: Timespec = Timespec { sec: 1, nsec: 0 };
+const TTL: Duration = Duration::from_secs(1);
 
 impl FilesystemMT for PassthroughFS {
     fn init(&self, _req: RequestInfo) -> ResultEmpty {
@@ -368,15 +378,22 @@ impl FilesystemMT for PassthroughFS {
         }
     }
 
-    fn utimens(&self, _req: RequestInfo, path: &Path, fh: Option<u64>, atime: Option<Timespec>, mtime: Option<Timespec>) -> ResultEmpty {
+    fn utimens(&self, _req: RequestInfo, path: &Path, fh: Option<u64>, atime: Option<SystemTime>, mtime: Option<SystemTime>) -> ResultEmpty {
         debug!("utimens: {:?}: {:?}, {:?}", path, atime, mtime);
 
-
-        fn timespec_to_libc(time: Option<Timespec>) -> libc::timespec {
+        let systemtime_to_libc = |time: Option<SystemTime>| -> libc::timespec {
             if let Some(time) = time {
+                let (secs, nanos) = match time.duration_since(SystemTime::UNIX_EPOCH) {
+                    Ok(duration) => (duration.as_secs() as i64, duration.subsec_nanos()),
+                    Err(in_past) => {
+                        let duration = in_past.duration();
+                        (-(duration.as_secs() as i64), duration.subsec_nanos())
+                    }
+                };
+
                 libc::timespec {
-                    tv_sec: time.sec as libc::time_t,
-                    tv_nsec: libc::time_t::from(time.nsec),
+                    tv_sec: secs,
+                    tv_nsec: i64::from(nanos),
                 }
             } else {
                 libc::timespec {
@@ -384,9 +401,9 @@ impl FilesystemMT for PassthroughFS {
                     tv_nsec: libc::UTIME_OMIT,
                 }
             }
-        }
+        };
 
-        let times = [timespec_to_libc(atime), timespec_to_libc(mtime)];
+        let times = [systemtime_to_libc(atime), systemtime_to_libc(mtime)];
 
         let result = if let Some(fd) = fh {
             unsafe { libc::futimens(fd as libc::c_int, &times as *const libc::timespec) }
@@ -657,8 +674,8 @@ impl FilesystemMT for PassthroughFS {
     fn getxtimes(&self, _req: RequestInfo, path: &Path) -> ResultXTimes {
         debug!("getxtimes: {:?}", path);
         let xtimes = XTimes {
-            bkuptime: Timespec { sec: 0, nsec: 0 },
-            crtime:   Timespec { sec: 0, nsec: 0 },
+            bkuptime: SystemTime::UNIX_EPOCH,
+            crtime:   SystemTime::UNIX_EPOCH,
         };
         Ok(xtimes)
     }

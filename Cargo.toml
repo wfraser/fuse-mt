@@ -1,6 +1,6 @@
 [package]
 name = "fuse_mt"
-version = "0.5.0"
+version = "0.6.0-dev"
 authors = ["William R. Fraser <wfraser@codewise.org>"]
 repository = "https://github.com/wfraser/fuse-mt"
 description = "A higher-level FUSE filesystem library with multi-threading and inode->path translation."
@@ -10,7 +10,7 @@ license = "MIT/Apache-2.0"
 readme = "README.md"
 
 [dependencies]
-fuse = "0.3.1"
+fuse = { git = "https://github.com/zargony/rust-fuse", rev = "f834fbbd5614976e8d480da249d487609504ee6e" }
 libc = "0.2"
 log = "0.4"
 threadpool = "1.0"
