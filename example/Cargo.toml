@@ -8,5 +8,4 @@ workspace = ".."
 [dependencies]
 libc = "0.2"
 log = "0.4"
-time = "0.1"
 fuse_mt = { path = ".." }

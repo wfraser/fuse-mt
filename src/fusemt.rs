@@ -7,9 +7,9 @@
 use std::ffi::OsStr;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use std::time::SystemTime;
 
 use threadpool::ThreadPool;
-use time::Timespec;
 
 use crate::directory_cache::*;
 use crate::inode_table::*;
@@ -138,19 +138,19 @@ impl<T: FilesystemMT + Sync + Send + 'static> fuse::Filesystem for FuseMT<T> {
     }
 
     fn setattr(&mut self,
-               req: &fuse::Request<'_>,         // passed to all
-               ino: u64,                    // translated to path; passed to all
-               mode: Option<u32>,           // chmod
-               uid: Option<u32>,            // chown
-               gid: Option<u32>,            // chown
-               size: Option<u64>,           // truncate
-               atime: Option<Timespec>,     // utimens
-               mtime: Option<Timespec>,     // utimens
-               fh: Option<u64>,             // passed to all
-               crtime: Option<Timespec>,    // utimens_osx  (OS X only)
-               chgtime: Option<Timespec>,   // utimens_osx  (OS X only)
-               bkuptime: Option<Timespec>,  // utimens_osx  (OS X only)
-               flags: Option<u32>,          // utimens_osx  (OS X only)
+               req: &fuse::Request<'_>,      // passed to all
+               ino: u64,                     // translated to path; passed to all
+               mode: Option<u32>,            // chmod
+               uid: Option<u32>,             // chown
+               gid: Option<u32>,             // chown
+               size: Option<u64>,            // truncate
+               atime: Option<SystemTime>,    // utimens
+               mtime: Option<SystemTime>,    // utimens
+               fh: Option<u64>,              // passed to all
+               crtime: Option<SystemTime>,   // utimens_osx  (OS X only)
+               chgtime: Option<SystemTime>,  // utimens_osx  (OS X only)
+               bkuptime: Option<SystemTime>, // utimens_osx  (OS X only)
+               flags: Option<u32>,           // utimens_osx  (OS X only)
                reply: fuse::ReplyAttr) {
         let path = get_path!(self, ino, reply);
         debug!("setattr: {:?}", path);
