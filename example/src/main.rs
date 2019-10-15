@@ -6,13 +6,8 @@
 use std::env;
 use std::ffi::{OsStr, OsString};
 
-extern crate libc;
-extern crate time;
-
 #[macro_use]
 extern crate log;
-
-extern crate fuse_mt;
 
 mod libc_extras;
 mod libc_wrappers;

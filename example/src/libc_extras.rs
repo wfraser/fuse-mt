@@ -132,7 +132,7 @@ pub mod libc {
                 if stat.is_none() {
                     let path_c = unsafe { CStr::from_ptr(path) } .to_owned();
                     let path_os = OsString::from_vec(path_c.into_bytes());
-                    *stat = Some(try!(libc_wrappers::lstat(path_os)));
+                    *stat = Some(libc_wrappers::lstat(path_os)?);
                 }
                 Ok(())
             }
