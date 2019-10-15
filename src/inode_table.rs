@@ -72,9 +72,9 @@ impl InodeTable {
         };
         debug!("explicitly adding {} -> {:?} with 1 lookups", inode, path);
         let previous = self.by_path.insert(path, inode as usize - 1);
-        if previous.is_some() {
+        if let Some(previous) = previous {
             error!("inode table buggered: {:?}", self);
-            panic!("attempted to insert duplicate path into inode table: {:?}", previous.unwrap());
+            panic!("attempted to insert duplicate path into inode table: {:?}", previous);
         }
         (inode, generation)
     }
