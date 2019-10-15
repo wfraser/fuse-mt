@@ -8,7 +8,7 @@ use std::io;
 use std::mem;
 use std::ptr;
 use std::os::unix::ffi::OsStringExt;
-use libc_extras::libc;
+use crate::libc_extras::libc;
 
 macro_rules! into_cstring {
     ($path:expr, $syscall:expr) => {
