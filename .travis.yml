@@ -11,7 +11,7 @@ matrix:
         - rust: nightly
 install:
     - if [ "$TRAVIS_OS_NAME" == "linux" ]; then sudo apt-get -qq update && sudo apt-get install -y libfuse-dev; fi
-    - if [ "$TRAVIS_OS_NAME" == "osx" ]; then brew update && brew tap caskroom/cask && brew cask install osxfuse; fi
+    - if [ "$TRAVIS_OS_NAME" == "osx" ]; then brew update && brew cask install osxfuse; fi
 script:
     - cargo build
     - cargo test
