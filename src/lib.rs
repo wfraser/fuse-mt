@@ -14,7 +14,7 @@
 // Copyright (c) 2016-2019 by William R. Fraser
 //
 
-extern crate fuse;
+pub extern crate fuse;
 extern crate libc;
 extern crate threadpool;
 extern crate time;
