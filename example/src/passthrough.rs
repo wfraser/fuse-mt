@@ -301,7 +301,7 @@ impl FilesystemMT for PassthroughFS {
     }
 
     fn chmod(&self, _req: RequestInfo, path: &Path, fh: Option<u64>, mode: u32) -> ResultEmpty {
-        debug!("chown: {:?} to {:#o}", path, mode);
+        debug!("chmod: {:?} to {:#o}", path, mode);
 
         let result = if let Some(fh) = fh {
             unsafe { libc::fchmod(fh as libc::c_int, mode as libc::mode_t) }
@@ -315,7 +315,7 @@ impl FilesystemMT for PassthroughFS {
 
         if -1 == result {
             let e = io::Error::last_os_error();
-            error!("chown({:?}, {:#o}): {}", path, mode, e);
+            error!("chmod({:?}, {:#o}): {}", path, mode, e);
             Err(e.raw_os_error().unwrap())
         } else {
             Ok(())
@@ -325,7 +325,7 @@ impl FilesystemMT for PassthroughFS {
     fn chown(&self, _req: RequestInfo, path: &Path, fh: Option<u64>, uid: Option<u32>, gid: Option<u32>) -> ResultEmpty {
         let uid = uid.unwrap_or(::std::u32::MAX);   // docs say "-1", but uid_t is unsigned
         let gid = gid.unwrap_or(::std::u32::MAX);   // ditto for gid_t
-        debug!("chmod: {:?} to {}:{}", path, uid, gid);
+        debug!("chown: {:?} to {}:{}", path, uid, gid);
 
         let result = if let Some(fd) = fh {
             unsafe { libc::fchown(fd as libc::c_int, uid, gid) }
@@ -339,7 +339,7 @@ impl FilesystemMT for PassthroughFS {
 
         if -1 == result {
             let e = io::Error::last_os_error();
-            error!("chmod({:?}, {}, {}): {}", path, uid, gid, e);
+            error!("chown({:?}, {}, {}): {}", path, uid, gid, e);
             Err(e.raw_os_error().unwrap())
         } else {
             Ok(())
