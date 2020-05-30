@@ -1,21 +1,25 @@
-// FuseMT :: A wrapper around FUSE that presents paths instead of inodes and dispatches I/O
-//           operations to multiple threads.
+// FuseMT :: A wrapper around FUSE that presents paths instead of inodes and
+//           dispatches I/O operations to multiple threads.
 //
 // Copyright (c) 2016-2019 by William R. Fraser
-//
+// Copyright (C) 2019-2020 Ahmed Masud.
 
+ 
 use std::ffi::OsStr;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::SystemTime;
 
-use fuse;
-use libc;
+// use fuse;
+// use libc;
 use threadpool::ThreadPool;
+use tracing::{debug, error};
 
-use directory_cache::*;
-use inode_table::*;
-use types::*;
+use crate:: {
+    directory_cache::*,
+    inode_table::*,
+    types::*
+};
 
 trait IntoRequestInfo {
     fn info(&self) -> RequestInfo;
