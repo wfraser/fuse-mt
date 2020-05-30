@@ -14,13 +14,15 @@
 // Copyright (c) 2016-2019 by William R. Fraser
 //
 
-extern crate fuse;
-extern crate libc;
-extern crate threadpool;
-extern crate time;
+// extern crate fuse;
+// extern crate libc;
+// extern crate threadpool;
+// extern crate time;
 
-#[macro_use]
-extern crate log;
+// #[macro_use]
+// extern crate log;
+
+
 
 mod directory_cache;
 mod fusemt;
