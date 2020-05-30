@@ -2,7 +2,8 @@
 name = "passthrufs"
 version = "0.1.0"
 authors = ["William R. Fraser <wfraser@codewise.org>"]
-# workspace = ".."
+workspace = ".."
+edition = "2018"
 
 [dependencies]
 libc = "0.2"
