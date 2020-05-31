@@ -14,13 +14,13 @@
 // Copyright (c) 2016-2019 by William R. Fraser
 //
 
-pub extern crate fuse;
-extern crate libc;
-extern crate threadpool;
-extern crate time;
+// extern crate fuse;
+// extern crate libc;
+// extern crate threadpool;
+// extern crate time;
 
-#[macro_use]
-extern crate log;
+// #[macro_use]
+// extern crate log;
 
 mod directory_cache;
 mod fusemt;
@@ -29,7 +29,7 @@ mod types;
 
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 
-pub use fuse::{FileType, mount, spawn_mount};
+pub use fuse::{mount, spawn_mount, FileType};
 
 pub use fusemt::*;
 pub use types::*;

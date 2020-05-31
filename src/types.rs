@@ -5,10 +5,10 @@
 
 use std::ffi::{OsStr, OsString};
 use std::path::Path;
+use std::time::{Duration, SystemTime};
 
 use fuse;
 use libc;
-use time::Timespec;
 
 /// Info about a request.
 #[derive(Clone, Copy, Debug)]
@@ -61,13 +61,13 @@ pub struct FileAttr {
     /// Size in blocks
     pub blocks: u64,
     /// Time of last access
-    pub atime: Timespec,
+    pub atime: SystemTime,
     /// Time of last modification
-    pub mtime: Timespec,
+    pub mtime: SystemTime,
     /// Time of last metadata change
-    pub ctime: Timespec,
+    pub ctime: SystemTime,
     /// Time of creation (macOS only)
-    pub crtime: Timespec,
+    pub crtime: SystemTime,
     /// Kind of file (directory, file, pipe, etc.)
     pub kind: fuse::FileType,
     /// Permissions
@@ -88,7 +88,7 @@ pub struct FileAttr {
 /// the opened file.
 #[derive(Clone, Debug)]
 pub struct CreatedEntry {
-    pub ttl: Timespec,
+    pub ttl: Duration,
     pub attr: FileAttr,
     pub fh: u64,
     pub flags: u32,
@@ -105,12 +105,12 @@ pub enum Xattr {
 #[cfg(target_os = "macos")]
 #[derive(Clone, Debug)]
 pub struct XTimes {
-    pub bkuptime: Timespec,
-    pub crtime: Timespec,
+    pub bkuptime: SystemTime,
+    pub crtime: SystemTime,
 }
 
 pub type ResultEmpty = Result<(), libc::c_int>;
-pub type ResultEntry = Result<(Timespec, FileAttr), libc::c_int>;
+pub type ResultEntry = Result<(Duration, FileAttr), libc::c_int>;
 pub type ResultOpen = Result<(u64, u32), libc::c_int>;
 pub type ResultReaddir = Result<Vec<DirectoryEntry>, libc::c_int>;
 pub type ResultData = Result<Vec<u8>, libc::c_int>;
@@ -177,13 +177,13 @@ pub trait FilesystemMT {
     /// * `fh`: a file handle if this is called on an open file.
     /// * `atime`: the time of last access.
     /// * `mtime`: the time of last modification.
-    fn utimens(&self, _req: RequestInfo, _path: &Path, _fh: Option<u64>, _atime: Option<Timespec>, _mtime: Option<Timespec>) -> ResultEmpty {
+    fn utimens(&self, _req: RequestInfo, _path: &Path, _fh: Option<u64>, _atime: Option<SystemTime>, _mtime: Option<SystemTime>) -> ResultEmpty {
         Err(libc::ENOSYS)
     }
 
     /// Set timestamps of a filesystem entry (with extra options only used on MacOS).
     #[allow(clippy::too_many_arguments)]
-    fn utimens_macos(&self, _req: RequestInfo, _path: &Path, _fh: Option<u64>, _crtime: Option<Timespec>, _chgtime: Option<Timespec>, _bkuptime: Option<Timespec>, _flags: Option<u32>) -> ResultEmpty {
+    fn utimens_macos(&self, _req: RequestInfo, _path: &Path, _fh: Option<u64>, _crtime: Option<SystemTime>, _chgtime: Option<SystemTime>, _bkuptime: Option<SystemTime>, _flags: Option<u32>) -> ResultEmpty {
         Err(libc::ENOSYS)
     }
 
