@@ -20,7 +20,7 @@ pub struct RequestInfo {
     /// The group ID of the process making the request.
     pub gid: u32,
     /// The process ID of the process making the request.
-    pub pid: u32,
+    pub pid: i32,
 }
 
 /// A directory entry.
