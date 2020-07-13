@@ -1,7 +1,9 @@
 // Main Entry Point :: A fuse_mt test program.
 //
-// Copyright (c) 2016-2017 by William R. Fraser
+// Copyright (c) 2016-2020 by William R. Fraser
 //
+
+#![deny(rust_2018_idioms)]
 
 use std::env;
 use std::ffi::{OsStr, OsString};
@@ -16,11 +18,11 @@ mod passthrough;
 struct ConsoleLogger;
 
 impl log::Log for ConsoleLogger {
-    fn enabled(&self, _metadata: &log::Metadata) -> bool {
+    fn enabled(&self, _metadata: &log::Metadata<'_>) -> bool {
         true
     }
 
-    fn log(&self, record: &log::Record) {
+    fn log(&self, record: &log::Record<'_>) {
         println!("{}: {}: {}", record.target(), record.level(), record.args());
     }
 

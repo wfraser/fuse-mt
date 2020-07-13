@@ -8,6 +8,7 @@ categories = ["filesystem"]
 keywords = ["fuse", "filesystem"]
 license = "MIT/Apache-2.0"
 readme = "README.md"
+edition = "2018"
 
 [dependencies]
 fuse = "0.3.1"

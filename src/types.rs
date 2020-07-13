@@ -1,13 +1,11 @@
 // Public types exported by FuseMT.
 //
-// Copyright (c) 2016-2017 by William R. Fraser
+// Copyright (c) 2016-2020 by William R. Fraser
 //
 
 use std::ffi::{OsStr, OsString};
 use std::path::Path;
 
-use fuse;
-use libc;
 use time::Timespec;
 
 /// Info about a request.
@@ -114,6 +112,7 @@ pub type ResultEntry = Result<(Timespec, FileAttr), libc::c_int>;
 pub type ResultOpen = Result<(u64, u32), libc::c_int>;
 pub type ResultReaddir = Result<Vec<DirectoryEntry>, libc::c_int>;
 pub type ResultData = Result<Vec<u8>, libc::c_int>;
+pub type ResultSlice<'a> = Result<&'a [u8], libc::c_int>;
 pub type ResultWrite = Result<u32, libc::c_int>;
 pub type ResultStatfs = Result<Statfs, libc::c_int>;
 pub type ResultCreate = Result<CreatedEntry, libc::c_int>;
@@ -124,6 +123,13 @@ pub type ResultXTimes = Result<XTimes, libc::c_int>;
 
 #[deprecated(since = "0.3.0", note = "use ResultEntry instead")]
 pub type ResultGetattr = ResultEntry;
+
+/// Dummy struct returned by the callback in the `read()` method. Cannot be constructed outside
+/// this crate, `read()` requires you to return it, thus ensuring that you don't forget to call the
+/// callback.
+pub struct CallbackResult {
+    pub(crate) _private: std::marker::PhantomData<()>,
+}
 
 /// This trait must be implemented to implement a filesystem with FuseMT.
 pub trait FilesystemMT {
@@ -279,12 +285,12 @@ pub trait FilesystemMT {
     /// * `fh`: file handle returned from the `open` call.
     /// * `offset`: offset into the file to start reading.
     /// * `size`: number of bytes to read.
-    /// * `result`: a callback that must be invoked to return the result of the operation: either
+    /// * `callback`: a callback that must be invoked to return the result of the operation: either
     ///    the result data as a slice, or an error code.
     ///
-    /// This function has no return value; call the `result` function instead.
-    fn read(&self, _req: RequestInfo, _path: &Path, _fh: u64, _offset: u64, _size: u32, result: impl FnOnce(Result<&[u8], libc::c_int>)) {
-        result(Err(libc::ENOSYS))
+    /// Return the return value from the `callback` function.
+    fn read(&self, _req: RequestInfo, _path: &Path, _fh: u64, _offset: u64, _size: u32, callback: impl FnOnce(ResultSlice<'_>) -> CallbackResult) -> CallbackResult {
+        callback(Err(libc::ENOSYS))
     }
 
     /// Write to a file.
