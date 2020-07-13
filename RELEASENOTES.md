@@ -1,3 +1,7 @@
+v0.5.0: 2019-05-11
+  * Changed read() to use a callback instead of having implementations return data by value.
+    * This allows implementations to avoid allocating memory in some cases.
+
 v0.4.4: 2018-02-18
   * Implemented `getxtimes` and `setvolname` for macOS
 
