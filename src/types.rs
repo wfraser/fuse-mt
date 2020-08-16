@@ -135,7 +135,7 @@ pub struct CallbackResult {
 pub trait FilesystemMT {
     /// Called on mount, before any other function.
     fn init(&self, _req: RequestInfo) -> ResultEmpty {
-        Err(0)
+        Ok(())
     }
 
     /// Called on filesystem unmount.
