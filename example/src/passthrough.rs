@@ -111,6 +111,7 @@ impl PassthroughFS {
 
 const TTL: Timespec = Timespec { sec: 1, nsec: 0 };
 
+#[async_trait]
 impl FilesystemMT for PassthroughFS {
     fn init(&self, _req: RequestInfo) -> ResultEmpty {
         debug!("init");
@@ -121,7 +122,7 @@ impl FilesystemMT for PassthroughFS {
         debug!("destroy");
     }
 
-    fn getattr(&self, _req: RequestInfo, path: &Path, fh: Option<u64>) -> ResultEntry {
+    async fn getattr(&self, _req: RequestInfo, path: &Path, fh: Option<u64>) -> ResultEntry {
         debug!("getattr: {:?}", path);
 
         if let Some(fh) = fh {
@@ -137,7 +138,7 @@ impl FilesystemMT for PassthroughFS {
         }
     }
 
-    fn opendir(&self, _req: RequestInfo, path: &Path, _flags: u32) -> ResultOpen {
+    async fn opendir(&self, _req: RequestInfo, path: &Path, _flags: u32) -> ResultOpen {
         let real = self.real_path(path);
         debug!("opendir: {:?} (flags = {:#o})", real, _flags);
         match libc_wrappers::opendir(real) {
@@ -150,12 +151,12 @@ impl FilesystemMT for PassthroughFS {
         }
     }
 
-    fn releasedir(&self, _req: RequestInfo, path: &Path, fh: u64, _flags: u32) -> ResultEmpty {
+    async fn releasedir(&self, _req: RequestInfo, path: &Path, fh: u64, _flags: u32) -> ResultEmpty {
         debug!("releasedir: {:?}", path);
         libc_wrappers::closedir(fh)
     }
 
-    fn readdir(&self, _req: RequestInfo, path: &Path, fh: u64) -> ResultReaddir {
+    async fn readdir(&self, _req: RequestInfo, path: &Path, fh: u64) -> ResultReaddir {
         debug!("readdir: {:?}", path);
         let mut entries: Vec<DirectoryEntry> = vec![];
 
@@ -211,7 +212,7 @@ impl FilesystemMT for PassthroughFS {
         Ok(entries)
     }
 
-    fn open(&self, _req: RequestInfo, path: &Path, flags: u32) -> ResultOpen {
+    async fn open(&self, _req: RequestInfo, path: &Path, flags: u32) -> ResultOpen {
         debug!("open: {:?} flags={:#x}", path, flags);
 
         let real = self.real_path(path);
@@ -224,12 +225,12 @@ impl FilesystemMT for PassthroughFS {
         }
     }
 
-    fn release(&self, _req: RequestInfo, path: &Path, fh: u64, _flags: u32, _lock_owner: u64, _flush: bool) -> ResultEmpty {
+    async fn release(&self, _req: RequestInfo, path: &Path, fh: u64, _flags: u32, _lock_owner: u64, _flush: bool) -> ResultEmpty {
         debug!("release: {:?}", path);
         libc_wrappers::close(fh)
     }
 
-    fn read(&self, _req: RequestInfo, path: &Path, fh: u64, offset: u64, size: u32, callback: impl FnOnce(ResultSlice<'_>) -> CallbackResult) -> CallbackResult {
+    async fn read(&self, _req: RequestInfo, path: &Path, fh: u64, offset: u64, size: u32, callback: impl for<'r> FnOnce(ResultSlice<'r>) -> CallbackResult + Send + 'async_trait) -> CallbackResult {
         debug!("read: {:?} {:#x} @ {:#x}", path, size, offset);
         let mut file = unsafe { UnmanagedFile::new(fh) };
 
@@ -251,7 +252,7 @@ impl FilesystemMT for PassthroughFS {
         callback(Ok(&data))
     }
 
-    fn write(&self, _req: RequestInfo, path: &Path, fh: u64, offset: u64, data: Vec<u8>, _flags: u32) -> ResultWrite {
+    async fn write(&self, _req: RequestInfo, path: &Path, fh: u64, offset: u64, data: Vec<u8>, _flags: u32) -> ResultWrite {
         debug!("write: {:?} {:#x} @ {:#x}", path, data.len(), offset);
         let mut file = unsafe { UnmanagedFile::new(fh) };
 
@@ -270,7 +271,7 @@ impl FilesystemMT for PassthroughFS {
         Ok(nwritten)
     }
 
-    fn flush(&self, _req: RequestInfo, path: &Path, fh: u64, _lock_owner: u64) -> ResultEmpty {
+    async fn flush(&self, _req: RequestInfo, path: &Path, fh: u64, _lock_owner: u64) -> ResultEmpty {
         debug!("flush: {:?}", path);
         let mut file = unsafe { UnmanagedFile::new(fh) };
 
@@ -282,7 +283,7 @@ impl FilesystemMT for PassthroughFS {
         Ok(())
     }
 
-    fn fsync(&self, _req: RequestInfo, path: &Path, fh: u64, datasync: bool) -> ResultEmpty {
+    async fn fsync(&self, _req: RequestInfo, path: &Path, fh: u64, datasync: bool) -> ResultEmpty {
         debug!("fsync: {:?}, data={:?}", path, datasync);
         let file = unsafe { UnmanagedFile::new(fh) };
 
@@ -298,7 +299,7 @@ impl FilesystemMT for PassthroughFS {
         Ok(())
     }
 
-    fn chmod(&self, _req: RequestInfo, path: &Path, fh: Option<u64>, mode: u32) -> ResultEmpty {
+    async fn chmod(&self, _req: RequestInfo, path: &Path, fh: Option<u64>, mode: u32) -> ResultEmpty {
         debug!("chmod: {:?} to {:#o}", path, mode);
 
         let result = if let Some(fh) = fh {
@@ -320,7 +321,7 @@ impl FilesystemMT for PassthroughFS {
         }
     }
 
-    fn chown(&self, _req: RequestInfo, path: &Path, fh: Option<u64>, uid: Option<u32>, gid: Option<u32>) -> ResultEmpty {
+    async fn chown(&self, _req: RequestInfo, path: &Path, fh: Option<u64>, uid: Option<u32>, gid: Option<u32>) -> ResultEmpty {
         let uid = uid.unwrap_or(::std::u32::MAX);   // docs say "-1", but uid_t is unsigned
         let gid = gid.unwrap_or(::std::u32::MAX);   // ditto for gid_t
         debug!("chown: {:?} to {}:{}", path, uid, gid);
@@ -344,7 +345,7 @@ impl FilesystemMT for PassthroughFS {
         }
     }
 
-    fn truncate(&self, _req: RequestInfo, path: &Path, fh: Option<u64>, size: u64) -> ResultEmpty {
+    async fn truncate(&self, _req: RequestInfo, path: &Path, fh: Option<u64>, size: u64) -> ResultEmpty {
         debug!("truncate: {:?} to {:#x}", path, size);
 
         let result = if let Some(fd) = fh {
@@ -366,7 +367,7 @@ impl FilesystemMT for PassthroughFS {
         }
     }
 
-    fn utimens(&self, _req: RequestInfo, path: &Path, fh: Option<u64>, atime: Option<Timespec>, mtime: Option<Timespec>) -> ResultEmpty {
+    async fn utimens(&self, _req: RequestInfo, path: &Path, fh: Option<u64>, atime: Option<Timespec>, mtime: Option<Timespec>) -> ResultEmpty {
         debug!("utimens: {:?}: {:?}, {:?}", path, atime, mtime);
 
 
@@ -405,7 +406,7 @@ impl FilesystemMT for PassthroughFS {
         }
     }
 
-    fn readlink(&self, _req: RequestInfo, path: &Path) -> ResultData {
+    async fn readlink(&self, _req: RequestInfo, path: &Path) -> ResultData {
         debug!("readlink: {:?}", path);
 
         let real = self.real_path(path);
@@ -415,7 +416,7 @@ impl FilesystemMT for PassthroughFS {
         }
     }
 
-    fn statfs(&self, _req: RequestInfo, path: &Path) -> ResultStatfs {
+    async fn statfs(&self, _req: RequestInfo, path: &Path) -> ResultStatfs {
         debug!("statfs: {:?}", path);
 
         let real = self.real_path(path);
@@ -434,7 +435,7 @@ impl FilesystemMT for PassthroughFS {
         }
     }
 
-    fn fsyncdir(&self, _req: RequestInfo, path: &Path, fh: u64, datasync: bool) -> ResultEmpty {
+    async fn fsyncdir(&self, _req: RequestInfo, path: &Path, fh: u64, datasync: bool) -> ResultEmpty {
         debug!("fsyncdir: {:?} (datasync = {:?})", path, datasync);
 
         // TODO: what does datasync mean with regards to a directory handle?
@@ -448,7 +449,7 @@ impl FilesystemMT for PassthroughFS {
         }
     }
 
-    fn mknod(&self, _req: RequestInfo, parent_path: &Path, name: &OsStr, mode: u32, rdev: u32) -> ResultEntry {
+    async fn mknod(&self, _req: RequestInfo, parent_path: &Path, name: &OsStr, mode: u32, rdev: u32) -> ResultEntry {
         debug!("mknod: {:?}/{:?} (mode={:#o}, rdev={})", parent_path, name, mode, rdev);
 
         let real = PathBuf::from(self.real_path(parent_path)).join(name);
@@ -469,7 +470,7 @@ impl FilesystemMT for PassthroughFS {
         }
     }
 
-    fn mkdir(&self, _req: RequestInfo, parent_path: &Path, name: &OsStr, mode: u32) -> ResultEntry {
+    async fn mkdir(&self, _req: RequestInfo, parent_path: &Path, name: &OsStr, mode: u32) -> ResultEntry {
         debug!("mkdir {:?}/{:?} (mode={:#o})", parent_path, name, mode);
 
         let real = PathBuf::from(self.real_path(parent_path)).join(name);
@@ -493,7 +494,7 @@ impl FilesystemMT for PassthroughFS {
         }
     }
 
-    fn unlink(&self, _req: RequestInfo, parent_path: &Path, name: &OsStr) -> ResultEmpty {
+    async fn unlink(&self, _req: RequestInfo, parent_path: &Path, name: &OsStr) -> ResultEmpty {
         debug!("unlink {:?}/{:?}", parent_path, name);
 
         let real = PathBuf::from(self.real_path(parent_path)).join(name);
@@ -504,7 +505,7 @@ impl FilesystemMT for PassthroughFS {
             })
     }
 
-    fn rmdir(&self, _req: RequestInfo, parent_path: &Path, name: &OsStr) -> ResultEmpty {
+    async fn rmdir(&self, _req: RequestInfo, parent_path: &Path, name: &OsStr) -> ResultEmpty {
         debug!("rmdir: {:?}/{:?}", parent_path, name);
 
         let real = PathBuf::from(self.real_path(parent_path)).join(name);
@@ -515,7 +516,7 @@ impl FilesystemMT for PassthroughFS {
             })
     }
 
-    fn symlink(&self, _req: RequestInfo, parent_path: &Path, name: &OsStr, target: &Path) -> ResultEntry {
+    async fn symlink(&self, _req: RequestInfo, parent_path: &Path, name: &OsStr, target: &Path) -> ResultEntry {
         debug!("symlink: {:?}/{:?} -> {:?}", parent_path, name, target);
 
         let real = PathBuf::from(self.real_path(parent_path)).join(name);
@@ -536,7 +537,7 @@ impl FilesystemMT for PassthroughFS {
         }
     }
 
-    fn rename(&self, _req: RequestInfo, parent_path: &Path, name: &OsStr, newparent_path: &Path, newname: &OsStr) -> ResultEmpty {
+    async fn rename(&self, _req: RequestInfo, parent_path: &Path, name: &OsStr, newparent_path: &Path, newname: &OsStr) -> ResultEmpty {
         debug!("rename: {:?}/{:?} -> {:?}/{:?}", parent_path, name, newparent_path, newname);
 
         let real = PathBuf::from(self.real_path(parent_path)).join(name);
@@ -548,7 +549,7 @@ impl FilesystemMT for PassthroughFS {
             })
     }
 
-    fn link(&self, _req: RequestInfo, path: &Path, newparent: &Path, newname: &OsStr) -> ResultEntry {
+    async fn link(&self, _req: RequestInfo, path: &Path, newparent: &Path, newname: &OsStr) -> ResultEntry {
         debug!("link: {:?} -> {:?}/{:?}", path, newparent, newname);
 
         let real = self.real_path(path);
@@ -570,7 +571,7 @@ impl FilesystemMT for PassthroughFS {
         }
     }
 
-    fn create(&self, _req: RequestInfo, parent: &Path, name: &OsStr, mode: u32, flags: u32) -> ResultCreate {
+    async fn create(&self, _req: RequestInfo, parent: &Path, name: &OsStr, mode: u32, flags: u32) -> ResultCreate {
         debug!("create: {:?}/{:?} (mode={:#o}, flags={:#x})", parent, name, mode, flags);
 
         let real = PathBuf::from(self.real_path(parent)).join(name);
@@ -599,7 +600,7 @@ impl FilesystemMT for PassthroughFS {
         }
     }
 
-    fn listxattr(&self, _req: RequestInfo, path: &Path, size: u32) -> ResultXattr {
+    async fn listxattr(&self, _req: RequestInfo, path: &Path, size: u32) -> ResultXattr {
         debug!("listxattr: {:?}", path);
 
         let real = self.real_path(path);
@@ -616,7 +617,7 @@ impl FilesystemMT for PassthroughFS {
         }
     }
 
-    fn getxattr(&self, _req: RequestInfo, path: &Path, name: &OsStr, size: u32) -> ResultXattr {
+    async fn getxattr(&self, _req: RequestInfo, path: &Path, name: &OsStr, size: u32) -> ResultXattr {
         debug!("getxattr: {:?} {:?} {}", path, name, size);
 
         let real = self.real_path(path);
@@ -633,26 +634,26 @@ impl FilesystemMT for PassthroughFS {
         }
     }
 
-    fn setxattr(&self, _req: RequestInfo, path: &Path, name: &OsStr, value: &[u8], flags: u32, position: u32) -> ResultEmpty {
+    async fn setxattr(&self, _req: RequestInfo, path: &Path, name: &OsStr, value: &[u8], flags: u32, position: u32) -> ResultEmpty {
         debug!("setxattr: {:?} {:?} {} bytes, flags = {:#x}, pos = {}", path, name, value.len(), flags, position);
         let real = self.real_path(path);
         libc_wrappers::lsetxattr(real, name.to_owned(), value, flags, position)
     }
 
-    fn removexattr(&self, _req: RequestInfo, path: &Path, name: &OsStr) -> ResultEmpty {
+    async fn removexattr(&self, _req: RequestInfo, path: &Path, name: &OsStr) -> ResultEmpty {
         debug!("removexattr: {:?} {:?}", path, name);
         let real = self.real_path(path);
         libc_wrappers::lremovexattr(real, name.to_owned())
     }
 
     #[cfg(target_os = "macos")]
-    fn setvolname(&self, _req: RequestInfo, name: &OsStr) -> ResultEmpty {
+    async fn setvolname(&self, _req: RequestInfo, name: &OsStr) -> ResultEmpty {
         info!("setvolname: {:?}", name);
         Err(libc::ENOTSUP)
     }
 
     #[cfg(target_os = "macos")]
-    fn getxtimes(&self, _req: RequestInfo, path: &Path) -> ResultXTimes {
+    async fn getxtimes(&self, _req: RequestInfo, path: &Path) -> ResultXTimes {
         debug!("getxtimes: {:?}", path);
         let xtimes = XTimes {
             bkuptime: Timespec { sec: 0, nsec: 0 },

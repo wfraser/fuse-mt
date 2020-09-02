@@ -26,6 +26,9 @@ mod types;
 
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 
+// Re-export async_trait since it is required to implement FilesystemMT.
+pub use async_trait::async_trait;
+
 pub use fuse::{FileType, mount, spawn_mount};
 
 pub use crate::fusemt::*;
