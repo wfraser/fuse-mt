@@ -1,0 +1,48 @@
+name: Cargo Checks
+
+on: [push, pull_request]
+
+jobs:
+  checks:
+    name: Cargo checks
+    runs-on: ${{matrix.os}}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+        rust_toolchain: [stable, nightly]
+        include:
+          - os: ubuntu-latest
+            fuse_install: sudo apt-get install fuse libfuse-dev
+          - os: macos-latest
+            fuse_install: brew install --cask osxfuse
+    steps:
+      - name: Set up FUSE
+        run: ${{matrix.fuse_install}}
+
+      - name: Install Rust toolchain
+        uses: actions-rs/toolchain@v1
+        with:
+          profile: minimal
+          components: clippy
+          toolchain: ${{matrix.rust_toolchain}}
+          override: true
+
+      - name: Checkout sources
+        uses: actions/checkout@v2
+
+      - name: Run clippy
+        uses: actions-rs/cargo@v1
+        with:
+          command: clippy
+          args: --all-targets -- --deny warnings
+
+      - name: Run cargo test
+        uses: actions-rs/cargo@v1
+        with:
+          command: test
+
+      - name: Run clippy on example
+        uses: actions-rs/cargo@v1
+        with:
+          command: clippy
+          args: --manifest-path example/Cargo.toml --all-targets -- --deny warnings

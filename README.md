@@ -1,6 +1,6 @@
 # FUSE-MT
 
-[![Build Status](https://travis-ci.org/wfraser/fuse-mt.svg?branch=master)](https://travis-ci.org/wfraser/fuse-mt)
+![Build Status](https://github.com/wfraser/fuse-mt/workflows/Cargo%20Checks/badge.svg)
 [![Crates.io](https://img.shields.io/crates/v/fuse_mt.svg)](https://crates.io/crates/fuse_mt)
 
 [Documentation](https://docs.rs/fuse_mt)
