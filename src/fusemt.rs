@@ -457,7 +457,7 @@ impl<T: FilesystemMT + Sync + Send + 'static> fuse::Filesystem for FuseMT<T> {
                 // Don't bother looking in the inode table for the entry; FUSE doesn't pre-
                 // populate its inode cache with this value, so subsequent access to these
                 // files is going to involve it issuing a LOOKUP operation anyway.
-                !(1 as Inode)
+                !1
             };
 
             debug!("readdir: adding entry #{}, {:?}", offset + index as i64, entry.name);

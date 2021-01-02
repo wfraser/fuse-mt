@@ -300,7 +300,7 @@ fn test_add_or_get() {
     // add() a second path and verify that get by path and inode work.
     let inode2 = table.add(path2.clone()).0;
     assert_eq!(*path2, *table.get_path(inode2).unwrap());
-    assert_eq!(inode2, table.add_or_get(path2.clone()).0);
+    assert_eq!(inode2, table.add_or_get(path2).0);
     table.lookup(inode2);
 
     // Check the ref counts by doing a single forget.
