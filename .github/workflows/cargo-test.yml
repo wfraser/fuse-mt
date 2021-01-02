@@ -46,3 +46,6 @@ jobs:
         with:
           command: clippy
           args: --manifest-path example/Cargo.toml --all-targets -- --deny warnings
+
+      - name: Run smoke test
+        run: ./smoke_test.sh
