@@ -26,7 +26,7 @@ pub struct DirectoryEntry {
     /// Name of the entry
     pub name: OsString,
     /// Kind of file (directory, file, pipe, etc.)
-    pub kind: fuse::FileType,
+    pub kind: crate::FileType,
 }
 
 /// Filesystem statistics.
@@ -66,7 +66,7 @@ pub struct FileAttr {
     /// Time of creation (macOS only)
     pub crtime: SystemTime,
     /// Kind of file (directory, file, pipe, etc.)
-    pub kind: fuse::FileType,
+    pub kind: crate::FileType,
     /// Permissions
     pub perm: u16,
     /// Number of hard links

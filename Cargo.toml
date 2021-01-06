@@ -11,11 +11,10 @@ readme = "README.md"
 edition = "2018"
 
 [dependencies]
-fuse = { git = "https://github.com/zargony/rust-fuse", rev = "54c8405d7b3606082af0e2dfb42f83ee4a50b73a" }
+fuser = "0.6.0"
 libc = "0.2"
 log = "0.4"
 threadpool = "1.0"
-time = "0.1"
 
 [workspace]
 members = [".", "example"]

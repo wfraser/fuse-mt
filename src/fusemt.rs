@@ -9,6 +9,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::SystemTime;
 
+use fuser::TimeOrNow;
 use threadpool::ThreadPool;
 
 use crate::directory_cache::*;
@@ -19,7 +20,7 @@ trait IntoRequestInfo {
     fn info(&self) -> RequestInfo;
 }
 
-impl<'a> IntoRequestInfo for fuse::Request<'a> {
+impl<'a> IntoRequestInfo for fuser::Request<'a> {
     fn info(&self) -> RequestInfo {
         RequestInfo {
             unique: self.unique(),
@@ -30,8 +31,8 @@ impl<'a> IntoRequestInfo for fuse::Request<'a> {
     }
 }
 
-fn fuse_fileattr(attr: FileAttr, ino: u64) -> fuse::FileAttr {
-    fuse::FileAttr {
+fn fuse_fileattr(attr: FileAttr, ino: u64) -> fuser::FileAttr {
+    fuser::FileAttr {
         ino,
         size: attr.size,
         blocks: attr.blocks,
@@ -45,7 +46,22 @@ fn fuse_fileattr(attr: FileAttr, ino: u64) -> fuse::FileAttr {
         uid: attr.uid,
         gid: attr.gid,
         rdev: attr.rdev,
+        blksize: 4096, // TODO
+        padding: 0,
         flags: attr.flags,
+    }
+}
+
+trait TimeOrNowExt {
+    fn time(self) -> SystemTime;
+}
+
+impl TimeOrNowExt for TimeOrNow {
+    fn time(self) -> SystemTime {
+        match self {
+            TimeOrNow::SpecificTime(t) => t,
+            TimeOrNow::Now => SystemTime::now(),
+        }
     }
 }
 
@@ -93,18 +109,28 @@ macro_rules! get_path {
     }
 }
 
-impl<T: FilesystemMT + Sync + Send + 'static> fuse::Filesystem for FuseMT<T> {
-    fn init(&mut self, req: &fuse::Request<'_>) -> Result<(), libc::c_int> {
+impl<T: FilesystemMT + Sync + Send + 'static> fuser::Filesystem for FuseMT<T> {
+    fn init(
+        &mut self,
+        req: &fuser::Request<'_>,
+        _config: &mut fuser::KernelConfig, // TODO
+    ) -> Result<(), libc::c_int> {
         debug!("init");
         self.target.init(req.info())
     }
 
-    fn destroy(&mut self, req: &fuse::Request<'_>) {
+    fn destroy(&mut self, req: &fuser::Request<'_>) {
         debug!("destroy");
         self.target.destroy(req.info());
     }
 
-    fn lookup(&mut self, req: &fuse::Request<'_>, parent: u64, name: &OsStr, reply: fuse::ReplyEntry) {
+    fn lookup(
+        &mut self,
+        req: &fuser::Request<'_>,
+        parent: u64,
+        name: &OsStr,
+        reply: fuser::ReplyEntry,
+    ) {
         let parent_path = get_path!(self, parent, reply);
         debug!("lookup: {:?}, {:?}", parent_path, name);
         let path = Arc::new((*parent_path).clone().join(name));
@@ -118,7 +144,12 @@ impl<T: FilesystemMT + Sync + Send + 'static> fuse::Filesystem for FuseMT<T> {
         }
     }
 
-    fn forget(&mut self, _req: &fuse::Request<'_>, ino: u64, nlookup: u64) {
+    fn forget(
+        &mut self,
+        _req: &fuser::Request<'_>,
+        ino: u64,
+        nlookup: u64,
+    ) {
         let path = self.inodes.get_path(ino).unwrap_or_else(|| {
             Arc::new(PathBuf::from("[unknown]"))
         });
@@ -126,7 +157,12 @@ impl<T: FilesystemMT + Sync + Send + 'static> fuse::Filesystem for FuseMT<T> {
         debug!("forget: inode {} ({:?}) now at {} lookups", ino, path, lookups);
     }
 
-    fn getattr(&mut self, req: &fuse::Request<'_>, ino: u64, reply: fuse::ReplyAttr) {
+    fn getattr(
+        &mut self,
+        req: &fuser::Request<'_>,
+        ino: u64,
+        reply: fuser::ReplyAttr,
+    ) {
         let path = get_path!(self, ino, reply);
         debug!("getattr: {:?}", path);
         match self.target.getattr(req.info(), &path, None) {
@@ -137,21 +173,24 @@ impl<T: FilesystemMT + Sync + Send + 'static> fuse::Filesystem for FuseMT<T> {
         }
     }
 
-    fn setattr(&mut self,
-               req: &fuse::Request<'_>,      // passed to all
-               ino: u64,                     // translated to path; passed to all
-               mode: Option<u32>,            // chmod
-               uid: Option<u32>,             // chown
-               gid: Option<u32>,             // chown
-               size: Option<u64>,            // truncate
-               atime: Option<SystemTime>,    // utimens
-               mtime: Option<SystemTime>,    // utimens
-               fh: Option<u64>,              // passed to all
-               crtime: Option<SystemTime>,   // utimens_osx  (OS X only)
-               chgtime: Option<SystemTime>,  // utimens_osx  (OS X only)
-               bkuptime: Option<SystemTime>, // utimens_osx  (OS X only)
-               flags: Option<u32>,           // utimens_osx  (OS X only)
-               reply: fuse::ReplyAttr) {
+    fn setattr(
+        &mut self,
+        req: &fuser::Request<'_>,       // passed to all
+        ino: u64,                       // translated to path; passed to all
+        mode: Option<u32>,              // chmod
+        uid: Option<u32>,               // chown
+        gid: Option<u32>,               // chown
+        size: Option<u64>,              // truncate
+        atime: Option<TimeOrNow>,       // utimens
+        mtime: Option<TimeOrNow>,       // utimens
+        _ctime: Option<SystemTime>,     // ? TODO
+        fh: Option<u64>,                // passed to all
+        crtime: Option<SystemTime>,     // utimens_osx  (OS X only)
+        chgtime: Option<SystemTime>,    // utimens_osx  (OS X only)
+        bkuptime: Option<SystemTime>,   // utimens_osx  (OS X only)
+        flags: Option<u32>,             // utimens_osx  (OS X only)
+        reply: fuser::ReplyAttr,
+    ) {
         let path = get_path!(self, ino, reply);
         debug!("setattr: {:?}", path);
 
@@ -188,6 +227,8 @@ impl<T: FilesystemMT + Sync + Send + 'static> fuse::Filesystem for FuseMT<T> {
         }
 
         if atime.is_some() || mtime.is_some() {
+            let atime = atime.map(TimeOrNowExt::time);
+            let mtime = mtime.map(TimeOrNowExt::time);
             if let Err(e) = self.target.utimens(req.info(), &path, fh, atime, mtime) {
                 reply.error(e);
                 return;
@@ -207,7 +248,12 @@ impl<T: FilesystemMT + Sync + Send + 'static> fuse::Filesystem for FuseMT<T> {
         }
    }
 
-    fn readlink(&mut self, req: &fuse::Request<'_>, ino: u64, reply: fuse::ReplyData) {
+    fn readlink(
+        &mut self,
+        req: &fuser::Request<'_>,
+        ino: u64,
+        reply: fuser::ReplyData,
+    ) {
         let path = get_path!(self, ino, reply);
         debug!("readlink: {:?}", path);
         match self.target.readlink(req.info(), &path) {
@@ -216,7 +262,16 @@ impl<T: FilesystemMT + Sync + Send + 'static> fuse::Filesystem for FuseMT<T> {
         }
     }
 
-    fn mknod(&mut self, req: &fuse::Request<'_>, parent: u64, name: &OsStr, mode: u32, rdev: u32, reply: fuse::ReplyEntry) {
+    fn mknod(
+        &mut self,
+        req: &fuser::Request<'_>,
+        parent: u64,
+        name: &OsStr,
+        mode: u32,
+        _umask: u32, // TODO
+        rdev: u32,
+        reply: fuser::ReplyEntry,
+    ) {
         let parent_path = get_path!(self, parent, reply);
         debug!("mknod: {:?}/{:?}", parent_path, name);
         match self.target.mknod(req.info(), &parent_path, name, mode, rdev) {
@@ -228,7 +283,15 @@ impl<T: FilesystemMT + Sync + Send + 'static> fuse::Filesystem for FuseMT<T> {
         }
     }
 
-    fn mkdir(&mut self, req: &fuse::Request<'_>, parent: u64, name: &OsStr, mode: u32, reply: fuse::ReplyEntry) {
+    fn mkdir(
+        &mut self,
+        req: &fuser::Request<'_>,
+        parent: u64,
+        name: &OsStr,
+        mode: u32,
+        _umask: u32, // TODO
+        reply: fuser::ReplyEntry,
+    ) {
         let parent_path = get_path!(self, parent, reply);
         debug!("mkdir: {:?}/{:?}", parent_path, name);
         match self.target.mkdir(req.info(), &parent_path, name, mode) {
@@ -240,7 +303,13 @@ impl<T: FilesystemMT + Sync + Send + 'static> fuse::Filesystem for FuseMT<T> {
         }
     }
 
-    fn unlink(&mut self, req: &fuse::Request<'_>, parent: u64, name: &OsStr, reply: fuse::ReplyEmpty) {
+    fn unlink(
+        &mut self,
+        req: &fuser::Request<'_>,
+        parent: u64,
+        name: &OsStr,
+        reply: fuser::ReplyEmpty,
+    ) {
         let parent_path = get_path!(self, parent, reply);
         debug!("unlink: {:?}/{:?}", parent_path, name);
         match self.target.unlink(req.info(), &parent_path, name) {
@@ -252,7 +321,13 @@ impl<T: FilesystemMT + Sync + Send + 'static> fuse::Filesystem for FuseMT<T> {
         }
     }
 
-    fn rmdir(&mut self, req: &fuse::Request<'_>, parent: u64, name: &OsStr, reply: fuse::ReplyEmpty) {
+    fn rmdir(
+        &mut self,
+        req: &fuser::Request<'_>,
+        parent: u64,
+        name: &OsStr,
+        reply: fuser::ReplyEmpty,
+    ) {
         let parent_path = get_path!(self, parent, reply);
         debug!("rmdir: {:?}/{:?}", parent_path, name);
         match self.target.rmdir(req.info(), &parent_path, name) {
@@ -261,7 +336,14 @@ impl<T: FilesystemMT + Sync + Send + 'static> fuse::Filesystem for FuseMT<T> {
         }
     }
 
-    fn symlink(&mut self, req: &fuse::Request<'_>, parent: u64, name: &OsStr, link: &Path, reply: fuse::ReplyEntry) {
+    fn symlink(
+        &mut self,
+        req: &fuser::Request<'_>,
+        parent: u64,
+        name: &OsStr,
+        link: &Path,
+        reply: fuser::ReplyEntry,
+    ) {
         let parent_path = get_path!(self, parent, reply);
         debug!("symlink: {:?}/{:?} -> {:?}", parent_path, name, link);
         match self.target.symlink(req.info(), &parent_path, name, link) {
@@ -273,7 +355,16 @@ impl<T: FilesystemMT + Sync + Send + 'static> fuse::Filesystem for FuseMT<T> {
         }
     }
 
-    fn rename(&mut self, req: &fuse::Request<'_>, parent: u64, name: &OsStr, newparent: u64, newname: &OsStr, reply: fuse::ReplyEmpty) {
+    fn rename(
+        &mut self,
+        req: &fuser::Request<'_>,
+        parent: u64,
+        name: &OsStr,
+        newparent: u64,
+        newname: &OsStr,
+        _flags: u32, // TODO
+        reply: fuser::ReplyEmpty,
+    ) {
         let parent_path = get_path!(self, parent, reply);
         let newparent_path = get_path!(self, newparent, reply);
         debug!("rename: {:?}/{:?} -> {:?}/{:?}", parent_path, name, newparent_path, newname);
@@ -286,7 +377,14 @@ impl<T: FilesystemMT + Sync + Send + 'static> fuse::Filesystem for FuseMT<T> {
         }
     }
 
-    fn link(&mut self, req: &fuse::Request<'_>, ino: u64, newparent: u64, newname: &OsStr, reply: fuse::ReplyEntry) {
+    fn link(
+        &mut self,
+        req: &fuser::Request<'_>,
+        ino: u64,
+        newparent: u64,
+        newname: &OsStr,
+        reply: fuser::ReplyEntry,
+    ) {
         let path = get_path!(self, ino, reply);
         let newparent_path = get_path!(self, newparent, reply);
         debug!("link: {:?} -> {:?}/{:?}", path, newparent_path, newname);
@@ -301,16 +399,32 @@ impl<T: FilesystemMT + Sync + Send + 'static> fuse::Filesystem for FuseMT<T> {
         }
     }
 
-    fn open(&mut self, req: &fuse::Request<'_>, ino: u64, flags: u32, reply: fuse::ReplyOpen) {
+    fn open(
+        &mut self,
+        req: &fuser::Request<'_>,
+        ino: u64,
+        flags: i32,
+        reply: fuser::ReplyOpen,
+    ) {
         let path = get_path!(self, ino, reply);
         debug!("open: {:?}", path);
-        match self.target.open(req.info(), &path, flags) {
+        match self.target.open(req.info(), &path, flags as u32) { // TODO: change flags to i32
             Ok((fh, flags)) => reply.opened(fh, flags),
             Err(e) => reply.error(e),
         }
     }
 
-    fn read(&mut self, req: &fuse::Request<'_>, ino: u64, fh: u64, offset: i64, size: u32, reply: fuse::ReplyData) {
+    fn read(
+        &mut self,
+        req: &fuser::Request<'_>,
+        ino: u64,
+        fh: u64,
+        offset: i64,
+        size: u32,
+        _flags: i32,                // TODO
+        _lock_owner: Option<u64>,   // TODO
+        reply: fuser::ReplyData,
+    ) {
         let path = get_path!(self, ino, reply);
         debug!("read: {:?} {:#x} @ {:#x}", path, size, offset);
         if offset < 0 {
@@ -333,7 +447,18 @@ impl<T: FilesystemMT + Sync + Send + 'static> fuse::Filesystem for FuseMT<T> {
         });
     }
 
-    fn write(&mut self, req: &fuse::Request<'_>, ino: u64, fh: u64, offset: i64, data: &[u8], flags: u32, reply: fuse::ReplyWrite) {
+    fn write(
+        &mut self,
+        req: &fuser::Request<'_>,
+        ino: u64,
+        fh: u64,
+        offset: i64,
+        data: &[u8],
+        _write_flags: u32,          // TODO
+        flags: i32,
+        _lock_owner: Option<u64>,   // TODO
+        reply: fuser::ReplyWrite,
+    ) {
         let path = get_path!(self, ino, reply);
         debug!("write: {:?} {:#x} @ {:#x}", path, data.len(), offset);
         if offset < 0 {
@@ -349,14 +474,21 @@ impl<T: FilesystemMT + Sync + Send + 'static> fuse::Filesystem for FuseMT<T> {
         let data_buf = Vec::from(data);
 
         self.threadpool_run(move|| {
-            match target.write(req_info, &path, fh, offset as u64, data_buf, flags) {
+            match target.write(req_info, &path, fh, offset as u64, data_buf, flags as u32) {
                 Ok(written) => reply.written(written),
                 Err(e) => reply.error(e),
             }
         });
     }
 
-    fn flush(&mut self, req: &fuse::Request<'_>, ino: u64, fh: u64, lock_owner: u64, reply: fuse::ReplyEmpty) {
+    fn flush(
+        &mut self,
+        req: &fuser::Request<'_>,
+        ino: u64,
+        fh: u64,
+        lock_owner: u64,
+        reply: fuser::ReplyEmpty,
+    ) {
         let path = get_path!(self, ino, reply);
         debug!("flush: {:?}", path);
         let target = self.target.clone();
@@ -369,16 +501,34 @@ impl<T: FilesystemMT + Sync + Send + 'static> fuse::Filesystem for FuseMT<T> {
         });
     }
 
-    fn release(&mut self, req: &fuse::Request<'_>, ino: u64, fh: u64, flags: u32, lock_owner: u64, flush: bool, reply: fuse::ReplyEmpty) {
+    fn release(
+        &mut self,
+        req: &fuser::Request<'_>,
+        ino: u64,
+        fh: u64,
+        flags: i32,
+        lock_owner: Option<u64>,
+        flush: bool,
+        reply: fuser::ReplyEmpty,
+    ) {
         let path = get_path!(self, ino, reply);
         debug!("release: {:?}", path);
-        match self.target.release(req.info(), &path, fh, flags, lock_owner, flush) {
+        match self.target.release(
+            req.info(), &path, fh, flags as u32, lock_owner.unwrap_or(0) /* TODO */, flush)
+        {
             Ok(()) => reply.ok(),
             Err(e) => reply.error(e),
         }
     }
 
-    fn fsync(&mut self, req: &fuse::Request<'_>, ino: u64, fh: u64, datasync: bool, reply: fuse::ReplyEmpty) {
+    fn fsync(
+        &mut self,
+        req: &fuser::Request<'_>,
+        ino: u64,
+        fh: u64,
+        datasync: bool,
+        reply: fuser::ReplyEmpty,
+    ) {
         let path = get_path!(self, ino, reply);
         debug!("fsync: {:?}", path);
         let target = self.target.clone();
@@ -391,10 +541,16 @@ impl<T: FilesystemMT + Sync + Send + 'static> fuse::Filesystem for FuseMT<T> {
         });
     }
 
-    fn opendir(&mut self, req: &fuse::Request<'_>, ino: u64, flags: u32, reply: fuse::ReplyOpen) {
+    fn opendir(
+        &mut self,
+        req: &fuser::Request<'_>,
+        ino: u64,
+        flags: i32,
+        reply: fuser::ReplyOpen,
+    ) {
         let path = get_path!(self, ino, reply);
         debug!("opendir: {:?}", path);
-        match self.target.opendir(req.info(), &path, flags) {
+        match self.target.opendir(req.info(), &path, flags as u32) {
             Ok((fh, flags)) => {
                 let dcache_key = self.directory_cache.new_entry(fh);
                 reply.opened(dcache_key, flags);
@@ -403,7 +559,14 @@ impl<T: FilesystemMT + Sync + Send + 'static> fuse::Filesystem for FuseMT<T> {
         }
     }
 
-    fn readdir(&mut self, req: &fuse::Request<'_>, ino: u64, fh: u64, offset: i64, mut reply: fuse::ReplyDirectory) {
+    fn readdir(
+        &mut self,
+        req: &fuser::Request<'_>,
+        ino: u64,
+        fh: u64,
+        offset: i64,
+        mut reply: fuser::ReplyDirectory,
+    ) {
         let path = get_path!(self, ino, reply);
         debug!("readdir: {:?} @ {}", path, offset);
 
@@ -477,18 +640,32 @@ impl<T: FilesystemMT + Sync + Send + 'static> fuse::Filesystem for FuseMT<T> {
         reply.ok();
     }
 
-    fn releasedir(&mut self, req: &fuse::Request<'_>, ino: u64, fh: u64, flags: u32, reply: fuse::ReplyEmpty) {
+    fn releasedir(
+        &mut self,
+        req: &fuser::Request<'_>,
+        ino: u64,
+        fh: u64,
+        flags: i32,
+        reply: fuser::ReplyEmpty,
+    ) {
         let path = get_path!(self, ino, reply);
         debug!("releasedir: {:?}", path);
         let real_fh = self.directory_cache.real_fh(fh);
-        match self.target.releasedir(req.info(), &path, real_fh, flags) {
+        match self.target.releasedir(req.info(), &path, real_fh, flags as u32) {
             Ok(()) => reply.ok(),
             Err(e) => reply.error(e),
         }
         self.directory_cache.delete(fh);
     }
 
-    fn fsyncdir(&mut self, req: &fuse::Request<'_>, ino: u64, fh: u64, datasync: bool, reply: fuse::ReplyEmpty) {
+    fn fsyncdir(
+        &mut self,
+        req: &fuser::Request<'_>,
+        ino: u64,
+        fh: u64,
+        datasync: bool,
+        reply: fuser::ReplyEmpty,
+    ) {
         let path = get_path!(self, ino, reply);
         debug!("fsyncdir: {:?} (datasync: {:?})", path, datasync);
         let real_fh = self.directory_cache.real_fh(fh);
@@ -498,7 +675,12 @@ impl<T: FilesystemMT + Sync + Send + 'static> fuse::Filesystem for FuseMT<T> {
         }
     }
 
-    fn statfs(&mut self, req: &fuse::Request<'_>, ino: u64, reply: fuse::ReplyStatfs) {
+    fn statfs(
+        &mut self,
+        req: &fuser::Request<'_>,
+        ino: u64,
+        reply: fuser::ReplyStatfs,
+    ) {
         let path = if ino == 1 {
             Arc::new(PathBuf::from("/"))
         } else {
@@ -507,28 +689,46 @@ impl<T: FilesystemMT + Sync + Send + 'static> fuse::Filesystem for FuseMT<T> {
 
         debug!("statfs: {:?}", path);
         match self.target.statfs(req.info(), &path) {
-            Ok(statfs) => reply.statfs(statfs.blocks,
-                                       statfs.bfree,
-                                       statfs.bavail,
-                                       statfs.files,
-                                       statfs.ffree,
-                                       statfs.bsize,
-                                       statfs.namelen,
-                                       statfs.frsize),
+            Ok(statfs) => reply.statfs(
+                statfs.blocks,
+                statfs.bfree,
+                statfs.bavail,
+                statfs.files,
+                statfs.ffree,
+                statfs.bsize,
+                statfs.namelen,
+                statfs.frsize),
             Err(e) => reply.error(e),
         }
     }
 
-    fn setxattr(&mut self, req: &fuse::Request<'_>, ino: u64, name: &OsStr, value: &[u8], flags: u32, position: u32, reply: fuse::ReplyEmpty) {
+    fn setxattr(
+        &mut self,
+        req: &fuser::Request<'_>,
+        ino: u64,
+        name: &OsStr,
+        value: &[u8],
+        flags: i32,
+        position: u32,
+        reply: fuser::ReplyEmpty,
+    ) {
         let path = get_path!(self, ino, reply);
-        debug!("setxattr: {:?} {:?} ({} bytes, flags={:#x}, pos={:#x}", path, name, value.len(), flags, position);
-        match self.target.setxattr(req.info(), &path, name, value, flags, position) {
+        debug!("setxattr: {:?} {:?} ({} bytes, flags={:#x}, pos={:#x}",
+            path, name, value.len(), flags, position);
+        match self.target.setxattr(req.info(), &path, name, value, flags as u32, position) {
             Ok(()) => reply.ok(),
             Err(e) => reply.error(e),
         }
     }
 
-    fn getxattr(&mut self, req: &fuse::Request<'_>, ino: u64, name: &OsStr, size: u32, reply: fuse::ReplyXattr) {
+    fn getxattr(
+        &mut self,
+        req: &fuser::Request<'_>,
+        ino: u64,
+        name: &OsStr,
+        size: u32,
+        reply: fuser::ReplyXattr,
+    ) {
         let path = get_path!(self, ino, reply);
         debug!("getxattr: {:?} {:?}", path, name);
         match self.target.getxattr(req.info(), &path, name, size) {
@@ -547,7 +747,13 @@ impl<T: FilesystemMT + Sync + Send + 'static> fuse::Filesystem for FuseMT<T> {
         }
     }
 
-    fn listxattr(&mut self, req: &fuse::Request<'_>, ino: u64, size: u32, reply: fuse::ReplyXattr) {
+    fn listxattr(
+        &mut self,
+        req: &fuser::Request<'_>,
+        ino: u64,
+        size: u32,
+        reply: fuser::ReplyXattr,
+    ) {
         let path = get_path!(self, ino, reply);
         debug!("listxattr: {:?}", path);
         match self.target.listxattr(req.info(), &path, size) {
@@ -563,7 +769,13 @@ impl<T: FilesystemMT + Sync + Send + 'static> fuse::Filesystem for FuseMT<T> {
         }
     }
 
-    fn removexattr(&mut self, req: &fuse::Request<'_>, ino: u64, name: &OsStr, reply: fuse::ReplyEmpty) {
+    fn removexattr(
+        &mut self,
+        req: &fuser::Request<'_>,
+        ino: u64,
+        name: &OsStr,
+        reply: fuser::ReplyEmpty,
+    ) {
         let path = get_path!(self, ino, reply);
         debug!("removexattr: {:?}, {:?}", path, name);
         match self.target.removexattr(req.info(), &path, name) {
@@ -572,19 +784,34 @@ impl<T: FilesystemMT + Sync + Send + 'static> fuse::Filesystem for FuseMT<T> {
         }
     }
 
-    fn access(&mut self, req: &fuse::Request<'_>, ino: u64, mask: u32, reply: fuse::ReplyEmpty) {
+    fn access(
+        &mut self,
+        req: &fuser::Request<'_>,
+        ino: u64,
+        mask: i32,
+        reply: fuser::ReplyEmpty,
+    ) {
         let path = get_path!(self, ino, reply);
         debug!("access: {:?}, mask={:#o}", path, mask);
-        match self.target.access(req.info(), &path, mask) {
+        match self.target.access(req.info(), &path, mask as u32) {
             Ok(()) => reply.ok(),
             Err(e) => reply.error(e),
         }
     }
 
-    fn create(&mut self, req: &fuse::Request<'_>, parent: u64, name: &OsStr, mode: u32, flags: u32, reply: fuse::ReplyCreate) {
+    fn create(
+        &mut self,
+        req: &fuser::Request<'_>,
+        parent: u64,
+        name: &OsStr,
+        mode: u32,
+        _umask: u32, // TODO
+        flags: i32,
+        reply: fuser::ReplyCreate,
+    ) {
         let parent_path = get_path!(self, parent, reply);
         debug!("create: {:?}/{:?} (mode={:#o}, flags={:#x})", parent_path, name, mode, flags);
-        match self.target.create(req.info(), &parent_path, name, mode, flags) {
+        match self.target.create(req.info(), &parent_path, name, mode, flags as u32) {
             Ok(create) => {
                 let (ino, generation) = self.inodes.add(Arc::new(parent_path.join(name)));
                 let attr = fuse_fileattr(create.attr, ino);
@@ -601,7 +828,12 @@ impl<T: FilesystemMT + Sync + Send + 'static> fuse::Filesystem for FuseMT<T> {
     // bmap
 
     #[cfg(target_os = "macos")]
-    fn setvolname(&mut self, req: &fuse::Request<'_>, name: &OsStr, reply: fuse::ReplyEmpty) {
+    fn setvolname(
+        &mut self,
+        req: &fuser::Request<'_>,
+        name: &OsStr,
+        reply: fuser::ReplyEmpty,
+    ) {
         debug!("setvolname: {:?}", name);
         match self.target.setvolname(req.info(), name) {
             Ok(()) => reply.ok(),
@@ -612,7 +844,12 @@ impl<T: FilesystemMT + Sync + Send + 'static> fuse::Filesystem for FuseMT<T> {
     // exchange (macOS only, undocumented)
 
     #[cfg(target_os = "macos")]
-    fn getxtimes(&mut self, req: &fuse::Request<'_>, ino: u64, reply: fuse::ReplyXTimes) {
+    fn getxtimes(
+        &mut self,
+        req: &fuser::Request<'_>,
+        ino: u64,
+        reply: fuser::ReplyXTimes,
+    ) {
         let path = get_path!(self, ino, reply);
         debug!("getxtimes: {:?}", path);
         match self.target.getxtimes(req.info(), &path) {
