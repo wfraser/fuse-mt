@@ -11,13 +11,10 @@
 //! example, a read-only filesystem can skip implementing the `write` call and many others.
 
 //
-// Copyright (c) 2016-2019 by William R. Fraser
+// Copyright (c) 2016-2020 by William R. Fraser
 //
 
-// extern crate fuse;
-// extern crate libc;
-// extern crate threadpool;
-// extern crate time;
+#![deny(rust_2018_idioms)]
 
 // #[macro_use]
 // extern crate log;
@@ -29,7 +26,7 @@ mod types;
 
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 
-pub use fuse::{mount, spawn_mount, FileType};
+pub use fuser::{FileType, mount, spawn_mount};
 
-pub use fusemt::*;
-pub use types::*;
+pub use crate::fusemt::*;
+pub use crate::types::*;
