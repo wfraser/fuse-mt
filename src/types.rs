@@ -131,7 +131,6 @@ pub struct CallbackResult {
 }
 
 /// This trait must be implemented to implement a filesystem with FuseMT.
-#[allow(clippy::upper_case_acronyms)]
 pub trait FilesystemMT {
     /// Called on mount, before any other function.
     fn init(&self, _req: RequestInfo) -> ResultEmpty {
