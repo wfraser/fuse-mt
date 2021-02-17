@@ -1,5 +1,5 @@
 //! FuseMT -- A higher-level FUSE (Filesystem in Userspace) interface and wrapper around the
-//! low-level `rust-fuse` library that makes implementing a filesystem a bit easier.
+//! low-level `fuser` library that makes implementing a filesystem a bit easier.
 //!
 //! FuseMT translates inodes to paths and dispatches I/O operations to multiple threads, and
 //! simplifies some details of filesystem implementation, for example: splitting the `setattr` call

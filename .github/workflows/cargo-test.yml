@@ -15,6 +15,10 @@ jobs:
             fuse_install: sudo apt-get install fuse libfuse-dev
           - os: macos-latest
             fuse_install: brew install --cask osxfuse
+          - rust_toolchain: stable
+            deny_warnings: --deny warnings
+          - rust_toolchain: nightly
+            deny_warnings:
     steps:
       - name: Set up FUSE
         run: ${{matrix.fuse_install}}
@@ -34,7 +38,7 @@ jobs:
         uses: actions-rs/cargo@v1
         with:
           command: clippy
-          args: --all-targets -- --deny warnings
+          args: --all-targets -- ${{matrix.deny_warnings}}
 
       - name: Run cargo test
         uses: actions-rs/cargo@v1
@@ -45,7 +49,7 @@ jobs:
         uses: actions-rs/cargo@v1
         with:
           command: clippy
-          args: --manifest-path example/Cargo.toml --all-targets -- --deny warnings
+          args: --manifest-path example/Cargo.toml --all-targets -- ${{matrix.deny_warnings}}
 
       - name: Run smoke test
         run: ./smoke_test.sh

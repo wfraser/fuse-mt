@@ -9,7 +9,7 @@ This code is a wrapper on top of the Rust FUSE crate with the following addition
 * Dispatch system calls on multiple threads, so that e.g. I/O doesn't block directory listing.
 * Translate inodes into paths, to simplify filesystem implementation.
 
-The `rust-fuse` crate provides a minimal, low-level access to the FUSE kernel API, whereas this crate is more high-level, like the FUSE C API.
+The `fuser` crate provides a minimal, low-level access to the FUSE kernel API, whereas this crate is more high-level, like the FUSE C API.
 
 It includes a sample filesystem that uses the crate to pass all system calls through to another filesystem at any arbitrary path.
 

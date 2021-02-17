@@ -476,7 +476,7 @@ impl<T: FilesystemMT + Sync + Send + 'static> fuser::Filesystem for FuseMT<T> {
         let req_info = req.info();
 
         // The data needs to be copied here before dispatching to the threadpool because it's a
-        // slice of a single buffer that `rust-fuse` re-uses for the entire session.
+        // slice of a single buffer that `fuser` re-uses for the entire session.
         let data_buf = Vec::from(data);
 
         self.threadpool_run(move|| {

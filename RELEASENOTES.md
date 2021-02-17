@@ -1,3 +1,8 @@
+v0.6.0: xxxx-yy-zz
+  * Changed underlying FUSE crate to [`fuser`](https://github.com/cberner/fuser)
+  * breaking change: replaced `time` crate's `Timespec` with
+    `std::time::SystemTime` and `std::time::Duration`.
+
 v0.5.1: 2020-08-16
   * Changed FilesystemMT::init default impl to succeed instead of error.
 
