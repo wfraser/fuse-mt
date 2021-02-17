@@ -66,6 +66,7 @@ impl TimeOrNowExt for TimeOrNow {
 }
 
 #[derive(Debug)]
+#[allow(clippy::upper_case_acronyms)]
 pub struct FuseMT<T> {
     target: Arc<T>,
     inodes: InodeTable,
