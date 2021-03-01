@@ -833,7 +833,27 @@ impl<T: FilesystemMT + Sync + Send + 'static> fuser::Filesystem for FuseMT<T> {
 
     // bmap
 
-    #[cfg(target_os = "macos")]
+
+    fn fallocate(
+        &mut self,
+        req: &fuser::Request<'_>,
+        ino: u64,
+        fh: u64,
+        offset: i64,
+        length: i64,
+        mode: i32,
+        reply: fuser::ReplyEmpty,
+    ) {
+        let path = get_path!(self, ino, reply);
+        debug!("fallocate: {:?}, offset={:?}, length={:?}, mode={:#o}",
+            path, offset, length, mode);
+        match self.target.fallocate(req.info(), &path, fh, offset, length, mode) {
+            Ok(()) => reply.ok(),
+            Err(e) => reply.error(e),
+        }
+    }
+
+     #[cfg(target_os = "macos")]
     fn setvolname(
         &mut self,
         req: &fuser::Request<'_>,
