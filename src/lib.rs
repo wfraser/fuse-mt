@@ -16,8 +16,8 @@
 
 #![deny(rust_2018_idioms)]
 
-#[macro_use]
-extern crate log;
+// #[macro_use]
+// extern crate log;
 
 mod directory_cache;
 mod fusemt;
@@ -26,7 +26,6 @@ mod types;
 
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 
-pub use fuser::{FileType, mount, spawn_mount};
-
+pub use fuser::{FileType, mount, mount2, spawn_mount, MountOption};
 pub use crate::fusemt::*;
 pub use crate::types::*;
