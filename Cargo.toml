@@ -14,9 +14,14 @@ edition = "2018"
 log = "0.4.13"
 time = "0.2.24"
 tracing = "0.1.22"
-fuser = {path="../fuser", version="0.7.0" , features=[ "abi-7-31", "libfuse" ] }
 libc = "0.2.82"
 threadpool = "1.8.1"
+
+[dependencies.fuser]
+path="../fuser"
+version="0.8.0"
+features=[ "abi-7-31", "libfuse" ]
+
 
 [workspace]
 members = [".", "example"]

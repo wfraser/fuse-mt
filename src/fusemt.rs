@@ -53,7 +53,7 @@ fn fuse_fileattr(attr: FileAttr, ino: u64) -> fuser::FileAttr {
         gid: attr.gid,
         rdev: attr.rdev,
         blksize: 4096, // TODO
-        padding: 0,
+        // padding: 0,
         flags: attr.flags,
     }
 }
@@ -124,10 +124,10 @@ impl<T: FilesystemMT + Sync + Send + 'static> fuser::Filesystem for FuseMT<T> {
         debug!("init");
         self.target.init(req.info())
     }
-
-    fn destroy(&mut self, req: &fuser::Request<'_>) {
+    
+    fn destroy(&mut self) {
         debug!("destroy");
-        self.target.destroy(req.info());
+        self.target.destroy();
     }
 
     fn lookup(
