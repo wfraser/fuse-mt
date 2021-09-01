@@ -127,7 +127,7 @@ impl FilesystemMT for PassthroughFS {
         Ok(())
     }
 
-    fn destroy(&self, _req: RequestInfo) {
+    fn destroy(&self) {
         debug!("destroy");
     }
 
