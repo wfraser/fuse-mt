@@ -6,7 +6,7 @@
 #![deny(rust_2018_idioms)]
 
 use std::env;
-use std::ffi::{OsStr, OsString};
+use std::ffi::OsString;
 
 #[macro_use]
 extern crate log;
@@ -46,7 +46,7 @@ fn main() {
         target: args[1].clone(),
     };
 
-    let fuse_args: Vec<&OsStr> = vec![&OsStr::new("-o"), &OsStr::new("auto_unmount")];
+    let fuse_args: Vec<fuse_mt::MountOption> = vec![fuse_mt::MountOption::AutoUnmount];
 
     fuse_mt::mount(fuse_mt::FuseMT::new(filesystem, 1), &args[2], &fuse_args).unwrap();
 }

@@ -26,7 +26,7 @@ mod types;
 
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 
-pub use fuser::{FileType, mount, spawn_mount};
+pub use fuser::{FileType, mount2 as mount, spawn_mount, MountOption};
 
 pub use crate::fusemt::*;
 pub use crate::types::*;

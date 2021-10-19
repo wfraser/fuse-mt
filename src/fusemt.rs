@@ -47,7 +47,6 @@ fn fuse_fileattr(attr: FileAttr, ino: u64) -> fuser::FileAttr {
         gid: attr.gid,
         rdev: attr.rdev,
         blksize: 4096, // TODO
-        padding: 0,
         flags: attr.flags,
     }
 }
