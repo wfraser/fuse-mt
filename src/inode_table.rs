@@ -110,10 +110,7 @@ impl InodeTable {
     /// This operation runs in O(1) time.
     pub fn get_path(&self, inode: Inode) -> Option<Arc<PathBuf>> {
         let idx = inode as usize - 1;
-        match self.table[idx].path {
-            Some(ref path) => Some(path.clone()),
-            None => None,
-        }
+        self.table[idx].path.as_ref().cloned()
     }
 
     /// Get the inode that corresponds to a path, if there is one, or None, if it is not in the
@@ -121,10 +118,7 @@ impl InodeTable {
     ///
     /// This operation runs in O(log n) time.
     pub fn get_inode(&mut self, path: &Path) -> Option<Inode> {
-        match self.by_path.get(Pathish::new(path)) {
-            Some(idx) => Some((idx + 1) as Inode),
-            None => None,
-        }
+        self.by_path.get(Pathish::new(path)).map(|idx| (idx + 1) as Inode)
     }
 
     /// Increment the lookup count on a given inode.
