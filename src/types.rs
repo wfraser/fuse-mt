@@ -138,7 +138,7 @@ pub trait FilesystemMT {
     }
 
     /// Called on filesystem unmount.
-    fn destroy(&self, _req: RequestInfo) {
+    fn destroy(&self) {
         // Nothing.
     }
 

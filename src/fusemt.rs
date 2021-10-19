@@ -118,9 +118,9 @@ impl<T: FilesystemMT + Sync + Send + 'static> fuser::Filesystem for FuseMT<T> {
         self.target.init(req.info())
     }
 
-    fn destroy(&mut self, req: &fuser::Request<'_>) {
+    fn destroy(&mut self) {
         debug!("destroy");
-        self.target.destroy(req.info());
+        self.target.destroy();
     }
 
     fn lookup(
