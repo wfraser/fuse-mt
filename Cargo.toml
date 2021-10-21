@@ -12,7 +12,6 @@ edition = "2018"
 
 [dependencies]
 log = "0.4.13"
-time = "0.2.24"
 tracing = "0.1.22"
 libc = "0.2.82"
 threadpool = "1.8.1"
