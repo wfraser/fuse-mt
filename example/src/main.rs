@@ -46,7 +46,7 @@ fn main() {
         target: args[1].clone(),
     };
 
-    let fuse_args: Vec<&OsStr> = vec![&OsStr::new("-o"), &OsStr::new("auto_unmount")];
+    let fuse_args: Vec<&OsStr> = vec![OsStr::new("-o"), OsStr::new("auto_unmount")];
 
     fuse_mt::mount(fuse_mt::FuseMT::new(filesystem, 1), &args[2], &fuse_args).unwrap();
 }
