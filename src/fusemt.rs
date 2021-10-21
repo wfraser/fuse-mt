@@ -488,6 +488,37 @@ impl<T: FilesystemMT + Sync + Send + 'static> fuser::Filesystem for FuseMT<T> {
         });
     }
 
+    fn ioctl(
+        &mut self,
+        req: &fuser::Request<'_>,
+        ino: u64, 
+        fh: u64, 
+        flags: u32, 
+        cmd: u32, 
+        in_data: &[u8], 
+        out_size: u32,
+        reply: fuser::ReplyIoctl
+    ) {
+        let path = get_path!(self, ino, reply);
+        debug!("ioctl: {:?} {:#x} {:#x}", path, flags, cmd);
+        let target = self.target.clone();
+        let req_info = req.info();
+        let data_buf = Vec::from(in_data);
+        self.threadpool_run(move || {
+            target.ioctl(req_info, &path, fh, flags, cmd, &data_buf,
+            |result| {
+                match result {
+                    Ok(data) => reply.ioctl(data.0, 
+                        &data.1[..out_size as usize]),
+                    Err(e) => reply.error(e),
+                }
+                CallbackResult {
+                    _private: std::marker::PhantomData {},
+                }
+            });
+        });
+    }
+
     fn flush(
         &mut self,
         req: &fuser::Request<'_>,

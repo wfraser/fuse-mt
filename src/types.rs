@@ -123,7 +123,7 @@ pub type ResultCreate = Result<CreatedEntry, libc::c_int>;
 pub type ResultXattr = Result<Xattr, libc::c_int>;
 pub type ResultBmap = Result<u64, libc::c_int>;
 pub type ResultLseek = Result<u64, libc::c_int>;
-// pub type ResultIOCTL<'a> = Result<&'a [u8]>
+pub type ResultIOCTL<'a> = Result<(i32, &'a [u8]), libc::c_int>;
 
 #[cfg(target_os = "macos")]
 pub type ResultXTimes = Result<XTimes, libc::c_int>;
@@ -522,10 +522,10 @@ pub trait FilesystemMT {
         _req: RequestInfo,
         _path: &Path,
         _fh: u64, _flags: u32,
-        _cmd: u32, 
+        _cmd: u32,
         _in_data: &[u8],
-        callback: impl FnOnce(ResultSlice<'_>) -> CallbackResult
-    ) -> CallbackResult {
+        callback: impl FnOnce(ResultIOCTL<'_>) -> 
+            CallbackResult) -> CallbackResult {
         callback(Err(libc::ENOSYS))
     }
 
