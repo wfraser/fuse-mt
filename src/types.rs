@@ -1,6 +1,6 @@
 // Public types exported by FuseMT.
 //
-// Copyright (c) 2016-2020 by William R. Fraser
+// Copyright (c) 2016-2022 by William R. Fraser
 //
 
 use std::ffi::{OsStr, OsString};
@@ -138,7 +138,7 @@ pub trait FilesystemMT {
     }
 
     /// Called on filesystem unmount.
-    fn destroy(&self, _req: RequestInfo) {
+    fn destroy(&self) {
         // Nothing.
     }
 

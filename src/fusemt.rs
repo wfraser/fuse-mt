@@ -1,7 +1,7 @@
 // FuseMT :: A wrapper around FUSE that presents paths instead of inodes and dispatches I/O
 //           operations to multiple threads.
 //
-// Copyright (c) 2016-2020 by William R. Fraser
+// Copyright (c) 2016-2022 by William R. Fraser
 //
 
 use std::ffi::OsStr;
@@ -47,7 +47,6 @@ fn fuse_fileattr(attr: FileAttr, ino: u64) -> fuser::FileAttr {
         gid: attr.gid,
         rdev: attr.rdev,
         blksize: 4096, // TODO
-        padding: 0,
         flags: attr.flags,
     }
 }
@@ -119,9 +118,9 @@ impl<T: FilesystemMT + Sync + Send + 'static> fuser::Filesystem for FuseMT<T> {
         self.target.init(req.info())
     }
 
-    fn destroy(&mut self, req: &fuser::Request<'_>) {
+    fn destroy(&mut self) {
         debug!("destroy");
-        self.target.destroy(req.info());
+        self.target.destroy();
     }
 
     fn lookup(
