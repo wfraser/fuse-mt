@@ -2,12 +2,13 @@
 //
 // Implemented using fuse_mt::FilesystemMT.
 //
-// Copyright (c) 2016-2020 by William R. Fraser
+// Copyright (c) 2016-2022 by William R. Fraser
 //
 
 use std::ffi::{CStr, CString, OsStr, OsString};
 use std::fs::{self, File};
 use std::io::{self, Read, Write, Seek, SeekFrom};
+use std::mem;
 use std::os::unix::ffi::{OsStrExt, OsStringExt};
 use std::os::unix::io::{FromRawFd, IntoRawFd};
 use std::path::{Path, PathBuf};
@@ -244,14 +245,13 @@ impl FilesystemMT for PassthroughFS {
         let mut file = unsafe { UnmanagedFile::new(fh) };
 
         let mut data = Vec::<u8>::with_capacity(size as usize);
-        unsafe { data.set_len(size as usize) };
 
         if let Err(e) = file.seek(SeekFrom::Start(offset)) {
             error!("seek({:?}, {}): {}", path, offset, e);
             return callback(Err(e.raw_os_error().unwrap()));
         }
-        match file.read(&mut data) {
-            Ok(n) => { data.truncate(n); },
+        match file.read(unsafe { mem::transmute(data.spare_capacity_mut()) }) {
+            Ok(n) => { unsafe { data.set_len(n) }; },
             Err(e) => {
                 error!("read {:?}, {:#x} @ {:#x}: {}", path, size, offset, e);
                 return callback(Err(e.raw_os_error().unwrap()));
@@ -623,9 +623,9 @@ impl FilesystemMT for PassthroughFS {
 
         if size > 0 {
             let mut data = Vec::<u8>::with_capacity(size as usize);
-            unsafe { data.set_len(size as usize) };
-            let nread = libc_wrappers::llistxattr(real, data.as_mut_slice())?;
-            data.truncate(nread);
+            let nread = libc_wrappers::llistxattr(
+                real, unsafe { mem::transmute(data.spare_capacity_mut()) })?;
+            unsafe { data.set_len(nread) };
             Ok(Xattr::Data(data))
         } else {
             let nbytes = libc_wrappers::llistxattr(real, &mut[])?;
@@ -640,9 +640,9 @@ impl FilesystemMT for PassthroughFS {
 
         if size > 0 {
             let mut data = Vec::<u8>::with_capacity(size as usize);
-            unsafe { data.set_len(size as usize) };
-            let nread = libc_wrappers::lgetxattr(real, name.to_owned(), data.as_mut_slice())?;
-            data.truncate(nread);
+            let nread = libc_wrappers::lgetxattr(
+                real, name.to_owned(), unsafe { mem::transmute(data.spare_capacity_mut()) })?;
+            unsafe { data.set_len(nread) };
             Ok(Xattr::Data(data))
         } else {
             let nbytes = libc_wrappers::lgetxattr(real, name.to_owned(), &mut [])?;
