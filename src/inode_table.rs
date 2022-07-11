@@ -1,6 +1,6 @@
 // InodeTable :: a bi-directional map of paths to inodes.
 //
-// Copyright (c) 2016-2019 by William R. Fraser
+// Copyright (c) 2016-2022 by William R. Fraser
 //
 
 use std::borrow::Borrow;
@@ -109,11 +109,7 @@ impl InodeTable {
     ///
     /// This operation runs in O(1) time.
     pub fn get_path(&self, inode: Inode) -> Option<Arc<PathBuf>> {
-        let idx = inode as usize - 1;
-        match self.table[idx].path {
-            Some(ref path) => Some(path.clone()),
-            None => None,
-        }
+        self.table[inode as usize - 1].path.clone()
     }
 
     /// Get the inode that corresponds to a path, if there is one, or None, if it is not in the
@@ -121,10 +117,9 @@ impl InodeTable {
     ///
     /// This operation runs in O(log n) time.
     pub fn get_inode(&mut self, path: &Path) -> Option<Inode> {
-        match self.by_path.get(Pathish::new(path)) {
-            Some(idx) => Some((idx + 1) as Inode),
-            None => None,
-        }
+        self.by_path
+            .get(Pathish::new(path))
+            .map(|idx| (idx + 1) as Inode)
     }
 
     /// Increment the lookup count on a given inode.
@@ -170,7 +165,7 @@ impl InodeTable {
             lookups = entry.lookups;
             if lookups == 0 {
                 delete = true;
-                self.by_path.remove(&*entry.path.as_ref().unwrap());
+                self.by_path.remove(entry.path.as_ref().unwrap());
             }
         }
 
@@ -317,13 +312,13 @@ fn test_inode_rename() {
     // Add a path; verify that get by path and inode work.
     let inode = table.add(path1.clone()).0;
     assert_eq!(*path1, *table.get_path(inode).unwrap());
-    assert_eq!(inode, table.get_inode(&*path1).unwrap());
+    assert_eq!(inode, table.get_inode(&path1).unwrap());
 
     // Rename the inode; verify that get by the new path works and old path doesn't, and get by
     // inode still works.
-    table.rename(&*path1, path2.clone());
-    assert!(table.get_inode(&*path1).is_none());
-    assert_eq!(inode, table.get_inode(&*path2).unwrap());
+    table.rename(&path1, path2.clone());
+    assert!(table.get_inode(&path1).is_none());
+    assert_eq!(inode, table.get_inode(&path2).unwrap());
     assert_eq!(*path2, *table.get_path(inode).unwrap());
 }
 
@@ -336,8 +331,8 @@ fn test_unlink() {
     let inode = table.add(path.clone()).0;
 
     // Unlink it and verify that get by path fails.
-    table.unlink(&*path);
-    assert!(table.get_inode(&*path).is_none());
+    table.unlink(&path);
+    assert!(table.get_inode(&path).is_none());
 
     // Getting the path for the inode should still return the path.
     assert_eq!(*path, *table.get_path(inode).unwrap());
