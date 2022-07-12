@@ -1,4 +1,4 @@
-v0.6.0: xxxx-yy-zz
+v0.6.0: 2022-07-12
   * Changed underlying FUSE crate to [`fuser`](https://github.com/cberner/fuser) v0.11
     * Note that fuser has some additional capabilities which are not yet being exposed in this
       crate's API. These may be added in future releases.
