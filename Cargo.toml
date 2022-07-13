@@ -16,5 +16,8 @@ libc = "0.2"
 log = "0.4"
 threadpool = "1.0"
 
+[build-dependencies]
+toml = "0.5.9"
+
 [workspace]
 members = [".", "example"]
