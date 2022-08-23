@@ -11,7 +11,7 @@
 //! example, a read-only filesystem can skip implementing the `write` call and many others.
 
 //
-// Copyright (c) 2016-2020 by William R. Fraser
+// Copyright (c) 2016-2022 by William R. Fraser
 //
 
 #![deny(rust_2018_idioms)]
@@ -27,22 +27,41 @@ mod types;
 
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 
-use std::ffi::OsStr;
-use std::io;
 
-pub use fuser::{FileType, mount2, spawn_mount, MountOption};
+pub use fuser::FileType;
 pub use crate::fusemt::*;
 pub use crate::types::*;
 
+// Forward to similarly-named fuser functions to work around deprecation for now.
+// When these are removed, we'll have to either reimplement or break reverse compat.
+// Keep the doc comments in sync with those in fuser.
 
-/// Mounts a filesystem
-// A wrapper around fuser::mount, since fuser::mount is deprecated
-// and we will wrap it ourselves later, we don't want it bleeding out.
-#[inline]
-pub fn mount<FS, P>(filesystem: FS, mount_point: P, options: &[&OsStr]) -> io::Result<()>
-where
-    FS: fuser::Filesystem,
-    P: AsRef<std::path::Path> {
-		#[allow(deprecated)]
-		fuser::mount(filesystem, mount_point, options)
+use std::ffi::OsStr;
+use std::io;
+use std::path::Path;
+
+/// Mount the given filesystem to the given mountpoint. This function will not return until the
+/// filesystem is unmounted.
+#[inline(always)]
+pub fn mount<FS: fuser::Filesystem, P: AsRef<Path>>(
+    fs: FS,
+    mountpoint: P,
+    options: &[&OsStr],
+) -> io::Result<()> {
+    #[allow(deprecated)]
+    fuser::mount(fs, mountpoint, options)
+}
+
+/// Mount the given filesystem to the given mountpoint. This function spawns a background thread to
+/// handle filesystem operations while being mounted and therefore returns immediately. The
+/// returned handle should be stored to reference the mounted filesystem. If it's dropped, the
+/// filesystem will be unmounted.
+#[inline(always)]
+pub fn spawn_mount<FS: fuser::Filesystem + Send + 'static, P: AsRef<Path>>(
+    fs: FS,
+    mountpoint: P,
+    options: &[&OsStr],
+) -> io::Result<fuser::BackgroundSession> {
+    #[allow(deprecated)]
+    fuser::spawn_mount(fs, mountpoint, options)
 }

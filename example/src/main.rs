@@ -1,6 +1,6 @@
 // Main Entry Point :: A fuse_mt test program.
 //
-// Copyright (c) 2016-2020 by William R. Fraser
+// Copyright (c) 2016-2022 by William R. Fraser
 //
 
 #![deny(rust_2018_idioms)]
@@ -39,14 +39,14 @@ fn main() {
 
     if args.len() != 3 {
         println!("usage: {} <target> <mountpoint>", &env::args().next().unwrap());
-        ::std::process::exit(-1);
+        std::process::exit(-1);
     }
 
     let filesystem = passthrough::PassthroughFS {
         target: args[1].clone(),
     };
 
-    let fuse_args: Vec<&OsStr> = vec![OsStr::new("-o"), OsStr::new("auto_unmount")];
+    let fuse_args = [OsStr::new("-o"), OsStr::new("fsname=passthrufs,auto_unmount")];
 
-    fuse_mt::mount(fuse_mt::FuseMT::new(filesystem, 1), &args[2], &fuse_args).unwrap();
+    fuse_mt::mount(fuse_mt::FuseMT::new(filesystem, 1), &args[2], &fuse_args[..]).unwrap();
 }

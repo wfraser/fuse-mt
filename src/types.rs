@@ -1,6 +1,6 @@
 // Public types exported by FuseMT.
 //
-// Copyright (c) 2016-2020 by William R. Fraser
+// Copyright (c) 2016-2022 by William R. Fraser
 //
 
 use std::ffi::{OsStr, OsString};

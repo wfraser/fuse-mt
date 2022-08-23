@@ -1,8 +1,8 @@
-// FuseMT :: A wrapper around FUSE that presents paths instead of inodes and
-//           dispatches I/O operations to multiple threads.
+// FuseMT :: A wrapper around FUSE that presents paths instead of inodes and dispatches I/O
+//           operations to multiple threads.
 //
-// Copyright (c) 2016-2019 by William R. Fraser
-// Copyright (C) 2019-2020 Ahmed Masud.
+// Copyright (c) 2016-2022 by William R. Fraser
+// Copyright (C) 2019-2022 Ahmed Masud.
 
  
 use std::ffi::OsStr;
@@ -125,7 +125,6 @@ impl<T: FilesystemMT + Sync + Send + 'static> fuser::Filesystem for FuseMT<T> {
         debug!("init");
         self.target.init(req.info())
     }
-    
     fn destroy(&mut self) {
         debug!("destroy");
         self.target.destroy();
