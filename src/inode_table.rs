@@ -10,6 +10,7 @@ use std::collections::hash_map::Entry::*;
 use std::hash::{Hash, Hasher};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use tracing::{debug, error};
 
 pub type Inode = u64;
 pub type Generation = u64;

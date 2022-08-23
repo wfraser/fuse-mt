@@ -17,7 +17,7 @@ pub struct RequestInfo {
     /// The group ID of the process making the request.
     pub gid: u32,
     /// The process ID of the process making the request.
-    pub pid: u32,
+    pub pid: i32,
 }
 
 /// A directory entry.
@@ -99,6 +99,11 @@ pub enum Xattr {
     Data(Vec<u8>),
 }
 
+#[derive(Clone, Debug)]
+pub struct BmapBlock {
+    pub block: u64,
+}
+
 #[cfg(target_os = "macos")]
 #[derive(Clone, Debug)]
 pub struct XTimes {
@@ -116,6 +121,9 @@ pub type ResultWrite = Result<u32, libc::c_int>;
 pub type ResultStatfs = Result<Statfs, libc::c_int>;
 pub type ResultCreate = Result<CreatedEntry, libc::c_int>;
 pub type ResultXattr = Result<Xattr, libc::c_int>;
+pub type ResultBmap = Result<u64, libc::c_int>;
+pub type ResultLseek = Result<u64, libc::c_int>;
+pub type ResultIOCTL<'a> = Result<(i32, &'a [u8]), libc::c_int>;
 
 #[cfg(target_os = "macos")]
 pub type ResultXTimes = Result<XTimes, libc::c_int>;
@@ -470,6 +478,95 @@ pub trait FilesystemMT {
     // setlk
 
     // bmap
+
+    /// Test for a POSIX file lock.
+    #[allow(clippy::too_many_arguments)]
+    fn getlk(&self, _req: &RequestInfo, _path: &Path, _fh: u64,
+        _lock_owner: u64, _start: u64, _end: u64, _typ: i32, _pid: u32) -> ResultEmpty {
+        Err(libc::ENOSYS)
+    }
+
+    /// Acquire, modify or release a POSIX file lock.
+    /// For POSIX threads (NPTL) there's a 1-1 relation between pid and owner, but
+    /// otherwise this is not always the case.  For checking lock ownership,
+    /// 'fi->owner' must be used. The l_pid field in 'struct flock' should only be
+    /// used to fill in this field in getlk(). Note: if the locking methods are not
+    /// implemented, the kernel will still allow file locking to work locally.
+    /// Hence these are only interesting for network filesystems and similar.
+    #[allow(clippy::too_many_arguments)]
+    fn setlk(&self,
+        _req: RequestInfo,
+        _path: &Path,
+        _fh: Option<u64>, _lock_owner: u64,
+        _start: u64, _end: u64,
+        _typ: i32, _pid: u32,
+        _sleep: bool)-> ResultEmpty {
+            Err(libc::ENOSYS)
+        }
+
+    /// Map block index within file to block index within device.
+    /// Note: This makes sense only for block device backed filesystems mounted
+    /// with the 'blkdev' option
+    fn bmap(&self,
+        _req: RequestInfo,
+        _path: &Path,
+        _blocksize: u32,
+        _idx: u64) -> ResultBmap {
+            Err(libc::ENOSYS)
+        }
+
+    /// control device
+    #[allow(clippy::too_many_arguments)]
+    fn ioctl(
+        &self,
+        _req: RequestInfo,
+        _path: &Path,
+        _fh: u64, _flags: u32,
+        _cmd: u32,
+        _in_data: &[u8],
+        callback: impl FnOnce(ResultIOCTL<'_>) -> 
+            CallbackResult) -> CallbackResult {
+        callback(Err(libc::ENOSYS))
+    }
+
+    /// Preallocate or deallocate space to a file
+    fn fallocate(
+        &self,
+        _req: RequestInfo,
+        _path: &Path,
+        _fh: u64, _offset: i64,
+        _length: i64, _mode: i32) -> ResultEmpty {
+        Err(libc::ENOSYS)
+    }
+
+    /// Reposition read/write file offset
+    fn lseek(
+        &self,
+        _req: RequestInfo,
+        _fh: u64,
+        _offset: i64,
+        _whence: i32
+    ) -> ResultLseek {
+        Err(libc::ENOSYS)
+    }
+
+    /// Copy the specified range from the source inode to the destination inode
+    #[allow(clippy::too_many_arguments)]
+    fn copy_file_range(
+        &self,
+        _req: RequestInfo,
+        _path_in: &Path,
+        _fh_in: Option<u64>,
+        _offset_in: i64,
+        _path_out: &Path,
+        _fh_out: Option<u64>,
+        _offset_out: i64,
+        _len: u64,
+        _flags: u32,
+    ) -> ResultWrite {
+        Err(libc::ENOSYS)
+    }
+
 
     /// macOS only: Rename the volume.
     ///

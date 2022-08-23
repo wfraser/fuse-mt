@@ -16,7 +16,7 @@ jobs:
           - rust_toolchain: stable
             deny_warnings: --deny warnings
           - rust_toolchain: nightly
-            deny_warnings:
+            deny_warnings: true
     steps:
       - name: Set up FUSE
         run: ${{matrix.fuse_install}}

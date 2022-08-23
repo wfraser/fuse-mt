@@ -17,7 +17,8 @@
 #![deny(rust_2018_idioms)]
 
 #[macro_use]
-extern crate log;
+extern crate libc;
+
 
 mod directory_cache;
 mod fusemt;
@@ -25,6 +26,7 @@ mod inode_table;
 mod types;
 
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
+
 
 pub use fuser::FileType;
 pub use crate::fusemt::*;

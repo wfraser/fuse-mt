@@ -11,10 +11,13 @@ readme = "README.md"
 edition = "2018"
 
 [dependencies]
-fuser = "0.11"
+tracing = "0.1"
 libc = "0.2"
-log = "0.4"
-threadpool = "1.0"
+threadpool = "1.8.1"
+
+[dependencies.fuser]
+version="0.11"
+features=[ "abi-7-31", "libfuse" ]
 
 [workspace]
 members = [".", "example"]
