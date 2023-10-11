@@ -1,3 +1,6 @@
+v0.6.1: 2023-09-19
+  * Updated `fuser` dependency to v0.13.
+
 v0.6.0: 2022-07-12
   * Changed underlying FUSE crate to [`fuser`](https://github.com/cberner/fuser) v0.11
     * Note that fuser has some additional capabilities which are not yet being exposed in this
