@@ -195,8 +195,8 @@ impl InodeTable {
 
     /// Remove the path->inode mapping for a given path, but keep the inode around.
     pub fn unlink(&mut self, path: &Path) {
-        self.by_path.remove(Pathish::new(path));
-        // Note that the inode->path mapping remains.
+        let idx = self.by_path.remove(Pathish::new(path)).unwrap();
+        self.table[idx].path = None;
     }
 
     /// Get a free indode table entry and its number, either by allocating a new one, or re-using
