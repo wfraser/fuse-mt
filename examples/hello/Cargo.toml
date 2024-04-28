@@ -1,0 +1,11 @@
+[package]
+name = "hello"
+version = "0.1.0"
+authors = ["not-jan"]
+edition = "2021"
+workspace = "../.."
+
+[dependencies]
+libc = "0.2"
+log = "0.4"
+fuse_mt = { path = "../.." }

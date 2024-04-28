@@ -7,7 +7,7 @@
 
 This code is a wrapper on top of the Rust FUSE crate with the following additions:
 * Dispatch system calls on multiple threads, so that e.g. I/O doesn't block directory listing.
-* Translate inodes into paths, to simplify filesystem implementation.
+* Optionally translate inodes into paths, to simplify filesystem implementation.
 
 The `fuser` crate provides a minimal, low-level access to the FUSE kernel API, whereas this crate is more high-level, like the FUSE C API.
 
@@ -16,7 +16,8 @@ It includes a sample filesystem that uses the crate to pass all system calls thr
 This is a work-in-progress. Bug reports, pull requests, and other feedback are welcome!
 
 Some random notes on the implementation:
-* The trait that filesystems will implement is called `FilesystemMT`, and instead of the FUSE crate's convention of having methods return void and including a "reply" parameter, the methods return their values. This feels more idiomatic to me. They also take `&Path` arguments instead of inode numbers.
+* The trait that filesystems will implement is called `FilesystemMT<'_>`, and instead of the FUSE crate's convention of having methods return void and including a "reply" parameter, the methods return their values. This feels more idiomatic to me. They also take `&Path` arguments instead of inode numbers.
+* If you do not wish fuse-mt to translate inode numbers into `&Path` but still retain the comfort of fuse-mt you may implement `FilesystemMT<'_, Inode, RawFileAttr>` and `RawFilesystemMT` instead. All methods will then receive `u64` as their input.
 * Currently, only the following calls are dispatched to other threads:
     * read
     * write

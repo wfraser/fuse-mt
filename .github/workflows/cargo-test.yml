@@ -43,11 +43,11 @@ jobs:
         with:
           command: test
 
-      - name: Run clippy on example
+      - name: Run clippy on examples
         uses: actions-rs/cargo@v1
         with:
           command: clippy
-          args: --manifest-path example/Cargo.toml --all-targets -- ${{matrix.deny_warnings}}
+          args: --package hello --package passthrufs --all-targets -- ${{matrix.deny_warnings}}
 
       - name: Run smoke test
         run: ./smoke_test.sh

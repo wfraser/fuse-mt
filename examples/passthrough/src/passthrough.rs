@@ -122,7 +122,7 @@ impl PassthroughFS {
 
 const TTL: Duration = Duration::from_secs(1);
 
-impl FilesystemMT for PassthroughFS {
+impl FilesystemMT<'_> for PassthroughFS {
     fn init(&self, _req: RequestInfo) -> ResultEmpty {
         debug!("init");
         Ok(())
@@ -250,7 +250,7 @@ impl FilesystemMT for PassthroughFS {
             error!("seek({:?}, {}): {}", path, offset, e);
             return callback(Err(e.raw_os_error().unwrap()));
         }
-        match file.read(unsafe { mem::transmute(data.spare_capacity_mut()) }) {
+        match file.read(unsafe { mem::transmute::<&mut [std::mem::MaybeUninit<u8>], &mut [u8]>(data.spare_capacity_mut()) }) {
             Ok(n) => { unsafe { data.set_len(n) }; },
             Err(e) => {
                 error!("read {:?}, {:#x} @ {:#x}: {}", path, size, offset, e);
@@ -331,8 +331,8 @@ impl FilesystemMT for PassthroughFS {
     }
 
     fn chown(&self, _req: RequestInfo, path: &Path, fh: Option<u64>, uid: Option<u32>, gid: Option<u32>) -> ResultEmpty {
-        let uid = uid.unwrap_or(::std::u32::MAX);   // docs say "-1", but uid_t is unsigned
-        let gid = gid.unwrap_or(::std::u32::MAX);   // ditto for gid_t
+        let uid = uid.unwrap_or(u32::MAX);   // docs say "-1", but uid_t is unsigned
+        let gid = gid.unwrap_or(u32::MAX);   // ditto for gid_t
         debug!("chown: {:?} to {}:{}", path, uid, gid);
 
         let result = if let Some(fd) = fh {
@@ -624,7 +624,7 @@ impl FilesystemMT for PassthroughFS {
         if size > 0 {
             let mut data = Vec::<u8>::with_capacity(size as usize);
             let nread = libc_wrappers::llistxattr(
-                real, unsafe { mem::transmute(data.spare_capacity_mut()) })?;
+                real, unsafe { mem::transmute::<&mut [std::mem::MaybeUninit<u8>], &mut [u8]>(data.spare_capacity_mut()) })?;
             unsafe { data.set_len(nread) };
             Ok(Xattr::Data(data))
         } else {
@@ -641,7 +641,7 @@ impl FilesystemMT for PassthroughFS {
         if size > 0 {
             let mut data = Vec::<u8>::with_capacity(size as usize);
             let nread = libc_wrappers::lgetxattr(
-                real, name.to_owned(), unsafe { mem::transmute(data.spare_capacity_mut()) })?;
+                real, name.to_owned(), unsafe { mem::transmute::<&mut [std::mem::MaybeUninit<u8>], &mut [u8]>(data.spare_capacity_mut()) })?;
             unsafe { data.set_len(nread) };
             Ok(Xattr::Data(data))
         } else {
