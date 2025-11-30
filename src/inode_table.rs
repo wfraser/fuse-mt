@@ -165,7 +165,9 @@ impl InodeTable {
             lookups = entry.lookups;
             if lookups == 0 {
                 delete = true;
-                self.by_path.remove(entry.path.as_ref().unwrap());
+                if let Some(path) = entry.path.as_ref() {
+                    self.by_path.remove(path);
+                }
             }
         }
 
@@ -180,15 +182,21 @@ impl InodeTable {
     /// Change an inode's path to a different one, without changing the inode number.
     /// Lookup counts remain unchanged, even if this is replacing another file.
     pub fn rename(&mut self, oldpath: &Path, newpath: Arc<PathBuf>) {
+        // replace the old path with the new one
         let idx = self.by_path.remove(Pathish::new(oldpath)).unwrap();
         self.table[idx].path = Some(newpath.clone());
-        self.by_path.insert(newpath, idx); // this can replace a path with a new inode
+        let prev = self.by_path.insert(newpath, idx); // this can replace a path with a new inode
+
+        // unlink the new path from the previous inode holding it
+        if let Some(prev) = prev {
+            self.table[prev].path = None;
+        }
     }
 
     /// Remove the path->inode mapping for a given path, but keep the inode around.
     pub fn unlink(&mut self, path: &Path) {
-        self.by_path.remove(Pathish::new(path));
-        // Note that the inode->path mapping remains.
+        let idx = self.by_path.remove(Pathish::new(path)).unwrap();
+        self.table[idx].path = None;
     }
 
     /// Get a free indode table entry and its number, either by allocating a new one, or re-using
