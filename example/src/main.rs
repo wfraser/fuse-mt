@@ -6,7 +6,7 @@
 #![deny(rust_2018_idioms)]
 
 use std::env;
-use std::ffi::{OsStr, OsString};
+use std::ffi::OsString;
 
 #[macro_use]
 extern crate log;
@@ -46,7 +46,9 @@ fn main() {
         target: args[1].clone(),
     };
 
-    let fuse_args = [OsStr::new("-o"), OsStr::new("fsname=passthrufs")];
+    // Use the Config-based API introduced in fuser 0.17.
+    let mut config = fuser::Config::default();
+    config.mount_options.push(fuser::MountOption::FSName("passthrufs".to_owned()));
 
-    fuse_mt::mount(fuse_mt::FuseMT::new(filesystem, 1), &args[2], &fuse_args[..]).unwrap();
+    fuse_mt::mount_with_config(fuse_mt::FuseMT::new(filesystem, 1), &args[2], &config).unwrap();
 }
