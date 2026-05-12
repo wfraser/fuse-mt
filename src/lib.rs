@@ -68,6 +68,9 @@ fn make_mount_options(options: &[&OsStr]) -> io::Result<fuser::Config> {
                 "non-utf8 mount option not supported",
             )
         })?;
+        if opt_str == "-o" {
+            continue;
+        }
         cfg.mount_options
             .push(MountOption::CUSTOM(opt_str.to_owned()));
     }
