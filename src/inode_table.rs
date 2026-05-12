@@ -1,13 +1,13 @@
 // InodeTable :: a bi-directional map of paths to inodes.
 //
-// Copyright (c) 2016-2022 by William R. Fraser
+// Copyright (c) 2016-2026 by William R. Fraser
 //
 
 use std::borrow::Borrow;
-use std::cmp::{Eq, PartialEq};
-use std::collections::{HashMap, VecDeque};
-use std::collections::hash_map::Entry::*;
-use std::hash::{Hash, Hasher};
+use std::cmp::{Eq, Ordering, PartialEq};
+use std::collections::btree_map::Entry::*;
+use std::collections::{BTreeMap, VecDeque};
+use std::ops::Bound::{Excluded, Included, Unbounded};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
@@ -27,7 +27,7 @@ struct InodeTableEntry {
 pub struct InodeTable {
     table: Vec<InodeTableEntry>,
     free_list: VecDeque<usize>,
-    by_path: HashMap<Arc<PathBuf>, usize>,
+    by_path: BTreeMap<Arc<PathBuf>, usize>,
 }
 
 impl InodeTable {
@@ -42,7 +42,7 @@ impl InodeTable {
         let mut inode_table = InodeTable {
             table: Vec::new(),
             free_list: VecDeque::new(),
-            by_path: HashMap::new()
+            by_path: BTreeMap::new(),
         };
         let root = Arc::new(PathBuf::from("/"));
         inode_table.table.push(InodeTableEntry {
@@ -180,9 +180,42 @@ impl InodeTable {
     /// Change an inode's path to a different one, without changing the inode number.
     /// Lookup counts remain unchanged, even if this is replacing another file.
     pub fn rename(&mut self, oldpath: &Path, newpath: Arc<PathBuf>) {
-        let idx = self.by_path.remove(Pathish::new(oldpath)).unwrap();
-        self.table[idx].path = Some(newpath.clone());
-        self.by_path.insert(newpath, idx); // this can replace a path with a new inode
+        // Look for children of the path being renamed and fix them up too.
+        // Note that we use range() to find the bounds of the map first, and only then use
+        // extract_if to remove that range, because:
+        // 1. extract_if does not provide a way to stop iterating early
+        // 2. extract_if does not utilize Borrow in its range, so here we have to clone the
+        //    start and end paths because the range type must match the key type exactly.
+        if let Some((last_child, _)) = self
+            .by_path
+            .range::<Pathish, _>((Excluded(Pathish::new(oldpath)), Unbounded))
+            .take_while(|(path, _)| path.starts_with(oldpath))
+            .last()
+        {
+            let mut new_entries = vec![];
+            for (path, idx) in self.by_path.extract_if(
+                (
+                    Included(Arc::new(oldpath.to_owned())),
+                    Included(Arc::clone(last_child)),
+                ),
+                |_, _| true,
+            ) {
+                let suffix = path.strip_prefix(oldpath).unwrap();
+                let new_entry_path = if suffix.as_os_str().is_empty() {
+                    // this is the entry for parent path itself
+                    Arc::clone(&newpath)
+                } else {
+                    Arc::new(newpath.as_path().join(suffix))
+                };
+                self.table[idx].path = Some(Arc::clone(&new_entry_path));
+                new_entries.push((new_entry_path, idx));
+            }
+            self.by_path.extend(new_entries);
+        } else {
+            let idx = self.by_path.remove(Pathish::new(oldpath)).unwrap();
+            self.table[idx].path = Some(Arc::clone(&newpath));
+            self.by_path.insert(newpath, idx); // this can replace a path with a new inode
+        }
     }
 
     /// Remove the path->inode mapping for a given path, but keep the inode around.
@@ -236,9 +269,15 @@ impl Borrow<Pathish> for Arc<PathBuf> {
     }
 }
 
-impl Hash for Pathish {
-    fn hash<H: Hasher>(&self, state: &mut H) {
-        self.inner.hash(state);
+impl PartialOrd<Self> for Pathish {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for Pathish {
+    fn cmp(&self, other: &Self) -> Ordering {
+        self.inner.cmp(&other.inner)
     }
 }
 
@@ -251,93 +290,130 @@ impl PartialEq for Pathish {
     }
 }
 
-#[test]
-fn test_inode_reuse() {
-    let mut table = InodeTable::new();
-    let path1 = Arc::new(PathBuf::from("/foo/a"));
-    let path2 = Arc::new(PathBuf::from("/foo/b"));
+#[cfg(test)]
+mod tests {
+    use super::*;
 
-    // Add a path.
-    let inode1 = table.add(path1.clone()).0;
-    assert!(inode1 != 1);
-    assert_eq!(*path1, *table.get_path(inode1).unwrap());
+    #[test]
+    fn test_inode_reuse() {
+        let mut table = InodeTable::new();
+        let path1 = Arc::new(PathBuf::from("/foo/a"));
+        let path2 = Arc::new(PathBuf::from("/foo/b"));
 
-    // Add a second path; verify that the inode number is different.
-    let inode2 = table.add(path2.clone()).0;
-    assert!(inode2 != inode1);
-    assert!(inode2 != 1);
-    assert_eq!(*path2, *table.get_path(inode2).unwrap());
+        // Add a path.
+        let inode1 = table.add(path1.clone()).0;
+        assert!(inode1 != 1);
+        assert_eq!(*path1, *table.get_path(inode1).unwrap());
 
-    // Forget the first inode; verify that lookups on it fail.
-    assert_eq!(0, table.forget(inode1, 1));
-    assert!(table.get_path(inode1).is_none());
+        // Add a second path; verify that the inode number is different.
+        let inode2 = table.add(path2.clone()).0;
+        assert!(inode2 != inode1);
+        assert!(inode2 != 1);
+        assert_eq!(*path2, *table.get_path(inode2).unwrap());
 
-    // Add a third path; verify that the inode is reused.
-    let (inode3, generation3) = table.add(Arc::new(PathBuf::from("/foo/c")));
-    assert_eq!(inode1, inode3);
-    assert_eq!(1, generation3);
+        // Forget the first inode; verify that lookups on it fail.
+        assert_eq!(0, table.forget(inode1, 1));
+        assert!(table.get_path(inode1).is_none());
 
-    // Check that lookups on the third path succeed.
-    assert_eq!(Path::new("/foo/c"), *table.get_path(inode3).unwrap());
-}
+        // Add a third path; verify that the inode is reused.
+        let (inode3, generation3) = table.add(Arc::new(PathBuf::from("/foo/c")));
+        assert_eq!(inode1, inode3);
+        assert_eq!(1, generation3);
 
-#[test]
-fn test_add_or_get() {
-    let mut table = InodeTable::new();
-    let path1 = Arc::new(PathBuf::from("/foo/a"));
-    let path2 = Arc::new(PathBuf::from("/foo/b"));
+        // Check that lookups on the third path succeed.
+        assert_eq!(Path::new("/foo/c"), *table.get_path(inode3).unwrap());
+    }
 
-    // add_or_get() a path and verify that get by inode works before lookup() is done.
-    let inode1 = table.add_or_get(path1.clone()).0;
-    assert_eq!(*path1, *table.get_path(inode1).unwrap());
-    table.lookup(inode1);
+    #[test]
+    fn test_add_or_get() {
+        let mut table = InodeTable::new();
+        let path1 = Arc::new(PathBuf::from("/foo/a"));
+        let path2 = Arc::new(PathBuf::from("/foo/b"));
 
-    // add() a second path and verify that get by path and inode work.
-    let inode2 = table.add(path2.clone()).0;
-    assert_eq!(*path2, *table.get_path(inode2).unwrap());
-    assert_eq!(inode2, table.add_or_get(path2).0);
-    table.lookup(inode2);
+        // add_or_get() a path and verify that get by inode works before lookup() is done.
+        let inode1 = table.add_or_get(path1.clone()).0;
+        assert_eq!(*path1, *table.get_path(inode1).unwrap());
+        table.lookup(inode1);
 
-    // Check the ref counts by doing a single forget.
-    assert_eq!(0, table.forget(inode1, 1));
-    assert_eq!(1, table.forget(inode2, 1));
-}
+        // add() a second path and verify that get by path and inode work.
+        let inode2 = table.add(path2.clone()).0;
+        assert_eq!(*path2, *table.get_path(inode2).unwrap());
+        assert_eq!(inode2, table.add_or_get(path2).0);
+        table.lookup(inode2);
 
-#[test]
-fn test_inode_rename() {
-    let mut table = InodeTable::new();
-    let path1 = Arc::new(PathBuf::from("/foo/a"));
-    let path2 = Arc::new(PathBuf::from("/foo/b"));
+        // Check the ref counts by doing a single forget.
+        assert_eq!(0, table.forget(inode1, 1));
+        assert_eq!(1, table.forget(inode2, 1));
+    }
 
-    // Add a path; verify that get by path and inode work.
-    let inode = table.add(path1.clone()).0;
-    assert_eq!(*path1, *table.get_path(inode).unwrap());
-    assert_eq!(inode, table.get_inode(&path1).unwrap());
+    #[test]
+    fn test_inode_rename() {
+        let mut table = InodeTable::new();
+        let path1 = Arc::new(PathBuf::from("/foo/a"));
+        let path2 = Arc::new(PathBuf::from("/foo/b"));
 
-    // Rename the inode; verify that get by the new path works and old path doesn't, and get by
-    // inode still works.
-    table.rename(&path1, path2.clone());
-    assert!(table.get_inode(&path1).is_none());
-    assert_eq!(inode, table.get_inode(&path2).unwrap());
-    assert_eq!(*path2, *table.get_path(inode).unwrap());
-}
+        // Add a path; verify that get by path and inode work.
+        let inode = table.add(path1.clone()).0;
+        assert_eq!(*path1, *table.get_path(inode).unwrap());
+        assert_eq!(inode, table.get_inode(&path1).unwrap());
 
-#[test]
-fn test_unlink() {
-    let mut table = InodeTable::new();
-    let path = Arc::new(PathBuf::from("/foo/bar"));
+        // Rename the inode; verify that get by the new path works and old path doesn't, and get by
+        // inode still works.
+        table.rename(&path1, path2.clone());
+        assert!(table.get_inode(&path1).is_none());
+        assert_eq!(inode, table.get_inode(&path2).unwrap());
+        assert_eq!(*path2, *table.get_path(inode).unwrap());
+    }
 
-    // Add a path.
-    let inode = table.add(path.clone()).0;
+    #[test]
+    fn test_unlink() {
+        let mut table = InodeTable::new();
+        let path = Arc::new(PathBuf::from("/foo/bar"));
 
-    // Unlink it and verify that get by path fails.
-    table.unlink(&path);
-    assert!(table.get_inode(&path).is_none());
+        // Add a path.
+        let inode = table.add(path.clone()).0;
 
-    // Getting the path for the inode should still return the path.
-    assert_eq!(*path, *table.get_path(inode).unwrap());
+        // Unlink it and verify that get by path fails.
+        table.unlink(&path);
+        assert!(table.get_inode(&path).is_none());
 
-    // Verify that forgetting it once drops the refcount to zero and then lookups by inode fail.
-    assert_eq!(0, table.forget(inode, 1));
-    assert!(table.get_path(inode).is_none());
+        // Getting the path for the inode should still return the path.
+        assert_eq!(*path, *table.get_path(inode).unwrap());
+
+        // Verify that forgetting it once drops the refcount to zero and then lookups by inode fail.
+        assert_eq!(0, table.forget(inode, 1));
+        assert!(table.get_path(inode).is_none());
+    }
+
+    #[test]
+    fn test_rename_directory() {
+        let mut table = InodeTable::new();
+        let a = table.add(Arc::new(PathBuf::from("/a_file")));
+        let d = table.add(Arc::new(PathBuf::from("/directory")));
+        let x = table.add(Arc::new(PathBuf::from("/directory.x"))); // '.' sorts before '/' naïvely!
+        let d_f1 = table.add(Arc::new(PathBuf::from("/directory/file1")));
+        let d_f2 = table.add(Arc::new(PathBuf::from("/directory/file2")));
+        let z = table.add(Arc::new(PathBuf::from("/z_file")));
+
+        table.rename(Path::new("/a_file"), Arc::new(PathBuf::from("/a_file_renamed")));
+        assert_eq!(table.get_inode(Path::new("/a_file")), None);
+        assert_eq!(table.get_inode(Path::new("/a_file_renamed")), Some(a.0));
+
+        table.rename(Path::new("/directory"), Arc::new(PathBuf::from("/new_directory")));
+
+        // paths which should be unaffected
+        assert_eq!(table.get_inode(Path::new("/a_file_renamed")), Some(a.0));
+        assert_eq!(table.get_inode(Path::new("/z_file")), Some(z.0));
+        assert_eq!(table.get_inode(Path::new("/directory.x")), Some(x.0));
+
+        // paths which should have been renamed and return the same inode as original
+        assert_eq!(table.get_inode(Path::new("/new_directory")), Some(d.0));
+        assert_eq!(table.get_inode(Path::new("/new_directory/file1")), Some(d_f1.0));
+        assert_eq!(table.get_inode(Path::new("/new_directory/file2")), Some(d_f2.0));
+
+        // paths which should no longer exist
+        assert_eq!(table.get_inode(Path::new("/directory")), None);
+        assert_eq!(table.get_inode(Path::new("/directory/file1")), None);
+        assert_eq!(table.get_inode(Path::new("/directory/file2")), None);
+    }
 }
