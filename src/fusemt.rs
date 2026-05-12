@@ -1,15 +1,16 @@
 // FuseMT :: A wrapper around FUSE that presents paths instead of inodes and dispatches I/O
 //           operations to multiple threads.
 //
-// Copyright (c) 2016-2022 by William R. Fraser
+// Copyright (c) 2016-2026 by William R. Fraser
 //
 
 use std::ffi::OsStr;
+use std::io;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::SystemTime;
 
-use fuser::TimeOrNow;
+use fuser::{AccessFlags, BsdFileFlags, Errno, FileHandle, FopenFlags, INodeNo, LockOwner, OpenFlags, RenameFlags, TimeOrNow, WriteFlags};
 use threadpool::ThreadPool;
 
 use crate::directory_cache::*;
@@ -20,10 +21,10 @@ trait IntoRequestInfo {
     fn info(&self) -> RequestInfo;
 }
 
-impl<'a> IntoRequestInfo for fuser::Request<'a> {
+impl IntoRequestInfo for fuser::Request {
     fn info(&self) -> RequestInfo {
         RequestInfo {
-            unique: self.unique(),
+            unique: self.unique().0,
             uid: self.uid(),
             gid: self.gid(),
             pid: self.pid(),
@@ -31,7 +32,7 @@ impl<'a> IntoRequestInfo for fuser::Request<'a> {
     }
 }
 
-fn fuse_fileattr(attr: FileAttr, ino: u64) -> fuser::FileAttr {
+fn fuse_fileattr(attr: FileAttr, ino: INodeNo) -> fuser::FileAttr {
     fuser::FileAttr {
         ino,
         size: attr.size,
@@ -102,7 +103,7 @@ macro_rules! get_path {
         if let Some(path) = $s.inodes.get_path($ino) {
             path
         } else {
-            $reply.error(libc::EINVAL);
+            $reply.error(Errno::EINVAL);
             return;
         }
     }
@@ -111,11 +112,11 @@ macro_rules! get_path {
 impl<T: FilesystemMT + Sync + Send + 'static> fuser::Filesystem for FuseMT<T> {
     fn init(
         &mut self,
-        req: &fuser::Request<'_>,
+        req: &fuser::Request,
         _config: &mut fuser::KernelConfig, // TODO
-    ) -> Result<(), libc::c_int> {
+    ) -> Result<(), std::io::Error> {
         debug!("init");
-        self.target.init(req.info())
+        self.target.init(req.info()).map_err(io::Error::from_raw_os_error)
     }
 
     fn destroy(&mut self) {
@@ -124,9 +125,9 @@ impl<T: FilesystemMT + Sync + Send + 'static> fuser::Filesystem for FuseMT<T> {
     }
 
     fn lookup(
-        &mut self,
-        req: &fuser::Request<'_>,
-        parent: u64,
+        &self,
+        req: &fuser::Request,
+        parent: INodeNo,
         name: &OsStr,
         reply: fuser::ReplyEntry,
     ) {
@@ -139,14 +140,14 @@ impl<T: FilesystemMT + Sync + Send + 'static> fuser::Filesystem for FuseMT<T> {
                 self.inodes.lookup(ino);
                 reply.entry(&ttl, &fuse_fileattr(attr, ino), generation);
             },
-            Err(e) => reply.error(e),
+            Err(e) => reply.error(Errno::from_i32(e)),
         }
     }
 
     fn forget(
-        &mut self,
-        _req: &fuser::Request<'_>,
-        ino: u64,
+        &self,
+        _req: &fuser::Request,
+        ino: INodeNo,
         nlookup: u64,
     ) {
         let path = self.inodes.get_path(ino).unwrap_or_else(|| {
@@ -157,26 +158,26 @@ impl<T: FilesystemMT + Sync + Send + 'static> fuser::Filesystem for FuseMT<T> {
     }
 
     fn getattr(
-        &mut self,
-        req: &fuser::Request<'_>,
-        ino: u64,
-        fh: Option<u64>,
+        &self,
+        req: &fuser::Request,
+        ino: INodeNo,
+        fh: Option<FileHandle>,
         reply: fuser::ReplyAttr,
     ) {
         let path = get_path!(self, ino, reply);
         debug!("getattr: {:?}", path);
-        match self.target.getattr(req.info(), &path, fh) {
+        match self.target.getattr(req.info(), &path, fh.map(|h| h.0)) {
             Ok((ttl, attr)) => {
                 reply.attr(&ttl, &fuse_fileattr(attr, ino))
             },
-            Err(e) => reply.error(e),
+            Err(e) => reply.error(Errno::from_i32(e)),
         }
     }
 
     fn setattr(
-        &mut self,
-        req: &fuser::Request<'_>,       // passed to all
-        ino: u64,                       // translated to path; passed to all
+        &self,
+        req: &fuser::Request,           // passed to all
+        ino: INodeNo,                   // translated to path; passed to all
         mode: Option<u32>,              // chmod
         uid: Option<u32>,               // chown
         gid: Option<u32>,               // chown
@@ -184,11 +185,11 @@ impl<T: FilesystemMT + Sync + Send + 'static> fuser::Filesystem for FuseMT<T> {
         atime: Option<TimeOrNow>,       // utimens
         mtime: Option<TimeOrNow>,       // utimens
         _ctime: Option<SystemTime>,     // ? TODO
-        fh: Option<u64>,                // passed to all
+        fh: Option<FileHandle>,         // passed to all
         crtime: Option<SystemTime>,     // utimens_osx  (OS X only)
         chgtime: Option<SystemTime>,    // utimens_osx  (OS X only)
         bkuptime: Option<SystemTime>,   // utimens_osx  (OS X only)
-        flags: Option<u32>,             // utimens_osx  (OS X only)
+        flags: Option<BsdFileFlags>,    // utimens_osx  (OS X only)
         reply: fuser::ReplyAttr,
     ) {
         let path = get_path!(self, ino, reply);
@@ -205,23 +206,25 @@ impl<T: FilesystemMT + Sync + Send + 'static> fuser::Filesystem for FuseMT<T> {
 
         // TODO: figure out what C FUSE does when only some of these are implemented.
 
+        let fh = fh.map(|h| h.0);
+
         if let Some(mode) = mode {
             if let Err(e) = self.target.chmod(req.info(), &path, fh, mode) {
-                reply.error(e);
+                reply.error(Errno::from_i32(e));
                 return;
             }
         }
 
         if uid.is_some() || gid.is_some() {
             if let Err(e) = self.target.chown(req.info(), &path, fh, uid, gid) {
-                reply.error(e);
+                reply.error(Errno::from_i32(e));
                 return;
             }
         }
 
         if let Some(size) = size {
             if let Err(e) = self.target.truncate(req.info(), &path, fh, size) {
-                reply.error(e);
+                reply.error(Errno::from_i32(e));
                 return;
             }
         }
@@ -230,42 +233,42 @@ impl<T: FilesystemMT + Sync + Send + 'static> fuser::Filesystem for FuseMT<T> {
             let atime = atime.map(TimeOrNowExt::time);
             let mtime = mtime.map(TimeOrNowExt::time);
             if let Err(e) = self.target.utimens(req.info(), &path, fh, atime, mtime) {
-                reply.error(e);
+                reply.error(Errno::from_i32(e));
                 return;
             }
         }
 
         if crtime.is_some() || chgtime.is_some() || bkuptime.is_some() || flags.is_some() {
-            if let Err(e) = self.target.utimens_macos(req.info(), &path, fh, crtime, chgtime, bkuptime, flags) {
-                reply.error(e);
+            if let Err(e) = self.target.utimens_macos(req.info(), &path, fh, crtime, chgtime, bkuptime, flags.map(|f| f.bits())) {
+                reply.error(Errno::from_i32(e));
                 return
             }
         }
 
         match self.target.getattr(req.info(), &path, fh) {
             Ok((ttl, attr)) => reply.attr(&ttl, &fuse_fileattr(attr, ino)),
-            Err(e) => reply.error(e),
+            Err(e) => reply.error(Errno::from_i32(e)),
         }
    }
 
     fn readlink(
-        &mut self,
-        req: &fuser::Request<'_>,
-        ino: u64,
+        &self,
+        req: &fuser::Request,
+        ino: INodeNo,
         reply: fuser::ReplyData,
     ) {
         let path = get_path!(self, ino, reply);
         debug!("readlink: {:?}", path);
         match self.target.readlink(req.info(), &path) {
             Ok(data) => reply.data(&data),
-            Err(e) => reply.error(e),
+            Err(e) => reply.error(Errno::from_i32(e)),
         }
     }
 
     fn mknod(
-        &mut self,
-        req: &fuser::Request<'_>,
-        parent: u64,
+        &self,
+        req: &fuser::Request,
+        parent: INodeNo,
         name: &OsStr,
         mode: u32,
         _umask: u32, // TODO
@@ -279,14 +282,14 @@ impl<T: FilesystemMT + Sync + Send + 'static> fuser::Filesystem for FuseMT<T> {
                 let (ino, generation) = self.inodes.add(Arc::new(parent_path.join(name)));
                 reply.entry(&ttl, &fuse_fileattr(attr, ino), generation)
             },
-            Err(e) => reply.error(e),
+            Err(e) => reply.error(Errno::from_i32(e)),
         }
     }
 
     fn mkdir(
-        &mut self,
-        req: &fuser::Request<'_>,
-        parent: u64,
+        &self,
+        req: &fuser::Request,
+        parent: INodeNo,
         name: &OsStr,
         mode: u32,
         _umask: u32, // TODO
@@ -299,14 +302,14 @@ impl<T: FilesystemMT + Sync + Send + 'static> fuser::Filesystem for FuseMT<T> {
                 let (ino, generation) = self.inodes.add(Arc::new(parent_path.join(name)));
                 reply.entry(&ttl, &fuse_fileattr(attr, ino), generation)
             },
-            Err(e) => reply.error(e),
+            Err(e) => reply.error(Errno::from_i32(e)),
         }
     }
 
     fn unlink(
-        &mut self,
-        req: &fuser::Request<'_>,
-        parent: u64,
+        &self,
+        req: &fuser::Request,
+        parent: INodeNo,
         name: &OsStr,
         reply: fuser::ReplyEmpty,
     ) {
@@ -317,14 +320,14 @@ impl<T: FilesystemMT + Sync + Send + 'static> fuser::Filesystem for FuseMT<T> {
                 self.inodes.unlink(&parent_path.join(name));
                 reply.ok()
             },
-            Err(e) => reply.error(e),
+            Err(e) => reply.error(Errno::from_i32(e)),
         }
     }
 
     fn rmdir(
-        &mut self,
-        req: &fuser::Request<'_>,
-        parent: u64,
+        &self,
+        req: &fuser::Request,
+        parent: INodeNo,
         name: &OsStr,
         reply: fuser::ReplyEmpty,
     ) {
@@ -335,14 +338,14 @@ impl<T: FilesystemMT + Sync + Send + 'static> fuser::Filesystem for FuseMT<T> {
                 self.inodes.unlink(&parent_path.join(name));
                 reply.ok()
             },
-            Err(e) => reply.error(e),
+            Err(e) => reply.error(Errno::from_i32(e)),
         }
     }
 
     fn symlink(
-        &mut self,
-        req: &fuser::Request<'_>,
-        parent: u64,
+        &self,
+        req: &fuser::Request,
+        parent: INodeNo,
         name: &OsStr,
         link: &Path,
         reply: fuser::ReplyEntry,
@@ -354,18 +357,18 @@ impl<T: FilesystemMT + Sync + Send + 'static> fuser::Filesystem for FuseMT<T> {
                 let (ino, generation) = self.inodes.add(Arc::new(parent_path.join(name)));
                 reply.entry(&ttl, &fuse_fileattr(attr, ino), generation)
             },
-            Err(e) => reply.error(e),
+            Err(e) => reply.error(Errno::from_i32(e)),
         }
     }
 
     fn rename(
-        &mut self,
-        req: &fuser::Request<'_>,
-        parent: u64,
+        &self,
+        req: &fuser::Request,
+        parent: INodeNo,
         name: &OsStr,
-        newparent: u64,
+        newparent: INodeNo,
         newname: &OsStr,
-        _flags: u32, // TODO
+        _flags: RenameFlags, // TODO
         reply: fuser::ReplyEmpty,
     ) {
         let parent_path = get_path!(self, parent, reply);
@@ -376,15 +379,15 @@ impl<T: FilesystemMT + Sync + Send + 'static> fuser::Filesystem for FuseMT<T> {
                 self.inodes.rename(&parent_path.join(name), Arc::new(newparent_path.join(newname)));
                 reply.ok()
             },
-            Err(e) => reply.error(e),
+            Err(e) => reply.error(Errno::from_i32(e)),
         }
     }
 
     fn link(
-        &mut self,
-        req: &fuser::Request<'_>,
-        ino: u64,
-        newparent: u64,
+        &self,
+        req: &fuser::Request,
+        ino: INodeNo,
+        newparent: INodeNo,
         newname: &OsStr,
         reply: fuser::ReplyEntry,
     ) {
@@ -398,50 +401,45 @@ impl<T: FilesystemMT + Sync + Send + 'static> fuser::Filesystem for FuseMT<T> {
                 let (new_ino, generation) = self.inodes.add(Arc::new(newparent_path.join(newname)));
                 reply.entry(&ttl, &fuse_fileattr(attr, new_ino), generation);
             },
-            Err(e) => reply.error(e),
+            Err(e) => reply.error(Errno::from_i32(e)),
         }
     }
 
     fn open(
-        &mut self,
-        req: &fuser::Request<'_>,
-        ino: u64,
-        flags: i32,
+        &self,
+        req: &fuser::Request,
+        ino: INodeNo,
+        flags: OpenFlags,
         reply: fuser::ReplyOpen,
     ) {
         let path = get_path!(self, ino, reply);
         debug!("open: {:?}", path);
-        match self.target.open(req.info(), &path, flags as u32) { // TODO: change flags to i32
-            Ok((fh, flags)) => reply.opened(fh, flags),
-            Err(e) => reply.error(e),
+        match self.target.open(req.info(), &path, flags.0 as u32) { // TODO: change flags to i32
+            Ok((fh, flags)) => reply.opened(FileHandle(fh), FopenFlags::from_bits_retain(flags)),
+            Err(e) => reply.error(Errno::from_i32(e)),
         }
     }
 
     fn read(
-        &mut self,
-        req: &fuser::Request<'_>,
-        ino: u64,
-        fh: u64,
-        offset: i64,
+        &self,
+        req: &fuser::Request,
+        ino: INodeNo,
+        fh: FileHandle,
+        offset: u64,
         size: u32,
-        _flags: i32,                // TODO
-        _lock_owner: Option<u64>,   // TODO
+        _flags: OpenFlags,                // TODO
+        _lock_owner: Option<LockOwner>,   // TODO
         reply: fuser::ReplyData,
     ) {
         let path = get_path!(self, ino, reply);
         debug!("read: {:?} {:#x} @ {:#x}", path, size, offset);
-        if offset < 0 {
-            error!("read called with a negative offset");
-            reply.error(libc::EINVAL);
-            return;
-        }
         let target = self.target.clone();
         let req_info = req.info();
         self.threadpool_run(move || {
-            target.read(req_info, &path, fh, offset as u64, size, |result| {
+            target.read(req_info, &path, fh.0, offset, size, |result| {
                 match result {
                     Ok(data) => reply.data(data),
-                    Err(e) => reply.error(e),
+                    Err(e) => reply.error(Errno::from_i32(e)),
                 }
                 CallbackResult {
                     _private: std::marker::PhantomData {},
@@ -451,24 +449,19 @@ impl<T: FilesystemMT + Sync + Send + 'static> fuser::Filesystem for FuseMT<T> {
     }
 
     fn write(
-        &mut self,
-        req: &fuser::Request<'_>,
-        ino: u64,
-        fh: u64,
-        offset: i64,
+        &self,
+        req: &fuser::Request,
+        ino: INodeNo,
+        fh: FileHandle,
+        offset: u64,
         data: &[u8],
-        _write_flags: u32,          // TODO
-        flags: i32,
-        _lock_owner: Option<u64>,   // TODO
+        _write_flags: WriteFlags,         // TODO
+        flags: OpenFlags,
+        _lock_owner: Option<LockOwner>,   // TODO
         reply: fuser::ReplyWrite,
     ) {
         let path = get_path!(self, ino, reply);
         debug!("write: {:?} {:#x} @ {:#x}", path, data.len(), offset);
-        if offset < 0 {
-            error!("write called with a negative offset");
-            reply.error(libc::EINVAL);
-            return;
-        }
         let target = self.target.clone();
         let req_info = req.info();
 
@@ -477,19 +470,19 @@ impl<T: FilesystemMT + Sync + Send + 'static> fuser::Filesystem for FuseMT<T> {
         let data_buf = Vec::from(data);
 
         self.threadpool_run(move|| {
-            match target.write(req_info, &path, fh, offset as u64, data_buf, flags as u32) {
+            match target.write(req_info, &path, fh.0, offset, data_buf, flags.0 as u32) {
                 Ok(written) => reply.written(written),
-                Err(e) => reply.error(e),
+                Err(e) => reply.error(Errno::from_i32(e)),
             }
         });
     }
 
     fn flush(
-        &mut self,
-        req: &fuser::Request<'_>,
-        ino: u64,
-        fh: u64,
-        lock_owner: u64,
+        &self,
+        req: &fuser::Request,
+        ino: INodeNo,
+        fh: FileHandle,
+        lock_owner: LockOwner,
         reply: fuser::ReplyEmpty,
     ) {
         let path = get_path!(self, ino, reply);
@@ -497,38 +490,43 @@ impl<T: FilesystemMT + Sync + Send + 'static> fuser::Filesystem for FuseMT<T> {
         let target = self.target.clone();
         let req_info = req.info();
         self.threadpool_run(move|| {
-            match target.flush(req_info, &path, fh, lock_owner) {
+            match target.flush(req_info, &path, fh.0, lock_owner.0) {
                 Ok(()) => reply.ok(),
-                Err(e) => reply.error(e),
+                Err(e) => reply.error(Errno::from_i32(e)),
             }
         });
     }
 
     fn release(
-        &mut self,
-        req: &fuser::Request<'_>,
-        ino: u64,
-        fh: u64,
-        flags: i32,
-        lock_owner: Option<u64>,
+        &self,
+        req: &fuser::Request,
+        ino: INodeNo,
+        fh: FileHandle,
+        flags: OpenFlags,
+        lock_owner: Option<LockOwner>,
         flush: bool,
         reply: fuser::ReplyEmpty,
     ) {
         let path = get_path!(self, ino, reply);
         debug!("release: {:?}", path);
         match self.target.release(
-            req.info(), &path, fh, flags as u32, lock_owner.unwrap_or(0) /* TODO */, flush)
-        {
+            req.info(),
+            &path,
+            fh.0,
+            flags.0 as u32,
+            lock_owner.map(|o| o.0).unwrap_or(0) /* TODO */,
+            flush,
+        ) {
             Ok(()) => reply.ok(),
-            Err(e) => reply.error(e),
+            Err(e) => reply.error(Errno::from_i32(e)),
         }
     }
 
     fn fsync(
-        &mut self,
-        req: &fuser::Request<'_>,
-        ino: u64,
-        fh: u64,
+        &self,
+        req: &fuser::Request,
+        ino: INodeNo,
+        fh: FileHandle,
         datasync: bool,
         reply: fuser::ReplyEmpty,
     ) {
@@ -537,50 +535,44 @@ impl<T: FilesystemMT + Sync + Send + 'static> fuser::Filesystem for FuseMT<T> {
         let target = self.target.clone();
         let req_info = req.info();
         self.threadpool_run(move|| {
-            match target.fsync(req_info, &path, fh, datasync) {
+            match target.fsync(req_info, &path, fh.0, datasync) {
                 Ok(()) => reply.ok(),
-                Err(e) => reply.error(e),
+                Err(e) => reply.error(Errno::from_i32(e)),
             }
         });
     }
 
     fn opendir(
-        &mut self,
-        req: &fuser::Request<'_>,
-        ino: u64,
-        flags: i32,
+        &self,
+        req: &fuser::Request,
+        ino: INodeNo,
+        flags: OpenFlags,
         reply: fuser::ReplyOpen,
     ) {
         let path = get_path!(self, ino, reply);
         debug!("opendir: {:?}", path);
-        match self.target.opendir(req.info(), &path, flags as u32) {
+        match self.target.opendir(req.info(), &path, flags.0 as u32) {
             Ok((fh, flags)) => {
                 let dcache_key = self.directory_cache.new_entry(fh);
-                reply.opened(dcache_key, flags);
+                reply.opened(FileHandle(dcache_key), FopenFlags::from_bits_retain(flags));
             },
-            Err(e) => reply.error(e),
+            Err(e) => reply.error(Errno::from_i32(e)),
         }
     }
 
     fn readdir(
-        &mut self,
-        req: &fuser::Request<'_>,
-        ino: u64,
-        fh: u64,
-        offset: i64,
+        &self,
+        req: &fuser::Request,
+        ino: INodeNo,
+        fh: FileHandle,
+        offset: u64,
         mut reply: fuser::ReplyDirectory,
     ) {
         let path = get_path!(self, ino, reply);
         debug!("readdir: {:?} @ {}", path, offset);
 
-        if offset < 0 {
-            error!("readdir called with a negative offset");
-            reply.error(libc::EINVAL);
-            return;
-        }
-
         let entries: &[DirectoryEntry] = {
-            let dcache_entry = self.directory_cache.get_mut(fh);
+            let dcache_entry = self.directory_cache.get_mut(fh.0);
             if let Some(ref entries) = dcache_entry.entries {
                 entries
             } else {
@@ -591,14 +583,14 @@ impl<T: FilesystemMT + Sync + Send + 'static> fuser::Filesystem for FuseMT<T> {
                         dcache_entry.entries.as_ref().unwrap()
                     },
                     Err(e) => {
-                        reply.error(e);
+                        reply.error(Errno::from_i32(e));
                         return;
                     }
                 }
             }
         };
 
-        let parent_inode = if ino == 1 {
+        let parent_inode = if ino == ROOT {
             ino
         } else {
             let parent_path: &Path = path.parent().unwrap();
@@ -606,7 +598,7 @@ impl<T: FilesystemMT + Sync + Send + 'static> fuser::Filesystem for FuseMT<T> {
                 Some(inode) => inode,
                 None => {
                     error!("readdir: unable to get inode for parent of {:?}", path);
-                    reply.error(libc::EIO);
+                    reply.error(Errno::EIO);
                     return;
                 }
             }
@@ -623,14 +615,14 @@ impl<T: FilesystemMT + Sync + Send + 'static> fuser::Filesystem for FuseMT<T> {
                 // Don't bother looking in the inode table for the entry; FUSE doesn't pre-
                 // populate its inode cache with this value, so subsequent access to these
                 // files is going to involve it issuing a LOOKUP operation anyway.
-                !1
+                INodeNo(!1)
             };
 
-            debug!("readdir: adding entry #{}, {:?}", offset + index as i64, entry.name);
+            debug!("readdir: adding entry #{}, {:?}", offset + index as u64, entry.name);
 
             let buffer_full: bool = reply.add(
                 entry_inode,
-                offset + index as i64 + 1,
+                offset + index as u64 + 1,
                 entry.kind,
                 entry.name.as_os_str());
 
@@ -644,47 +636,47 @@ impl<T: FilesystemMT + Sync + Send + 'static> fuser::Filesystem for FuseMT<T> {
     }
 
     fn releasedir(
-        &mut self,
-        req: &fuser::Request<'_>,
-        ino: u64,
-        fh: u64,
-        flags: i32,
+        &self,
+        req: &fuser::Request,
+        ino: INodeNo,
+        fh: FileHandle,
+        flags: OpenFlags,
         reply: fuser::ReplyEmpty,
     ) {
         let path = get_path!(self, ino, reply);
         debug!("releasedir: {:?}", path);
-        let real_fh = self.directory_cache.real_fh(fh);
-        match self.target.releasedir(req.info(), &path, real_fh, flags as u32) {
+        let real_fh = self.directory_cache.real_fh(fh.0);
+        match self.target.releasedir(req.info(), &path, real_fh, flags.0 as u32) {
             Ok(()) => reply.ok(),
-            Err(e) => reply.error(e),
+            Err(e) => reply.error(Errno::from_i32(e)),
         }
-        self.directory_cache.delete(fh);
+        self.directory_cache.delete(fh.0);
     }
 
     fn fsyncdir(
-        &mut self,
-        req: &fuser::Request<'_>,
-        ino: u64,
-        fh: u64,
+        &self,
+        req: &fuser::Request,
+        ino: INodeNo,
+        fh: FileHandle,
         datasync: bool,
         reply: fuser::ReplyEmpty,
     ) {
         let path = get_path!(self, ino, reply);
         debug!("fsyncdir: {:?} (datasync: {:?})", path, datasync);
-        let real_fh = self.directory_cache.real_fh(fh);
+        let real_fh = self.directory_cache.real_fh(fh.0);
         match self.target.fsyncdir(req.info(), &path, real_fh, datasync) {
             Ok(()) => reply.ok(),
-            Err(e) => reply.error(e),
+            Err(e) => reply.error(Errno::from_i32(e)),
         }
     }
 
     fn statfs(
-        &mut self,
-        req: &fuser::Request<'_>,
-        ino: u64,
+        &self,
+        req: &fuser::Request,
+        ino: INodeNo,
         reply: fuser::ReplyStatfs,
     ) {
-        let path = if ino == 1 {
+        let path = if ino == ROOT {
             Arc::new(PathBuf::from("/"))
         } else {
             get_path!(self, ino, reply)
@@ -701,14 +693,14 @@ impl<T: FilesystemMT + Sync + Send + 'static> fuser::Filesystem for FuseMT<T> {
                 statfs.bsize,
                 statfs.namelen,
                 statfs.frsize),
-            Err(e) => reply.error(e),
+            Err(e) => reply.error(Errno::from_i32(e)),
         }
     }
 
     fn setxattr(
-        &mut self,
-        req: &fuser::Request<'_>,
-        ino: u64,
+        &self,
+        req: &fuser::Request,
+        ino: INodeNo,
         name: &OsStr,
         value: &[u8],
         flags: i32,
@@ -720,14 +712,14 @@ impl<T: FilesystemMT + Sync + Send + 'static> fuser::Filesystem for FuseMT<T> {
             path, name, value.len(), flags, position);
         match self.target.setxattr(req.info(), &path, name, value, flags as u32, position) {
             Ok(()) => reply.ok(),
-            Err(e) => reply.error(e),
+            Err(e) => reply.error(Errno::from_i32(e)),
         }
     }
 
     fn getxattr(
-        &mut self,
-        req: &fuser::Request<'_>,
-        ino: u64,
+        &self,
+        req: &fuser::Request,
+        ino: INodeNo,
         name: &OsStr,
         size: u32,
         reply: fuser::ReplyXattr,
@@ -745,15 +737,15 @@ impl<T: FilesystemMT + Sync + Send + 'static> fuser::Filesystem for FuseMT<T> {
             },
             Err(e) => {
                 debug!("getxattr: error {}", e);
-                reply.error(e)
+                reply.error(Errno::from_i32(e))
             },
         }
     }
 
     fn listxattr(
-        &mut self,
-        req: &fuser::Request<'_>,
-        ino: u64,
+        &self,
+        req: &fuser::Request,
+        ino: INodeNo,
         size: u32,
         reply: fuser::ReplyXattr,
     ) {
@@ -768,14 +760,14 @@ impl<T: FilesystemMT + Sync + Send + 'static> fuser::Filesystem for FuseMT<T> {
                 debug!("listxattr: sending {} bytes", vec.len());
                 reply.data(&vec)
             }
-            Err(e) => reply.error(e),
+            Err(e) => reply.error(Errno::from_i32(e)),
         }
     }
 
     fn removexattr(
-        &mut self,
-        req: &fuser::Request<'_>,
-        ino: u64,
+        &self,
+        req: &fuser::Request,
+        ino: INodeNo,
         name: &OsStr,
         reply: fuser::ReplyEmpty,
     ) {
@@ -783,29 +775,29 @@ impl<T: FilesystemMT + Sync + Send + 'static> fuser::Filesystem for FuseMT<T> {
         debug!("removexattr: {:?}, {:?}", path, name);
         match self.target.removexattr(req.info(), &path, name) {
             Ok(()) => reply.ok(),
-            Err(e) => reply.error(e),
+            Err(e) => reply.error(Errno::from_i32(e)),
         }
     }
 
     fn access(
-        &mut self,
-        req: &fuser::Request<'_>,
-        ino: u64,
-        mask: i32,
+        &self,
+        req: &fuser::Request,
+        ino: INodeNo,
+        mask: AccessFlags,
         reply: fuser::ReplyEmpty,
     ) {
         let path = get_path!(self, ino, reply);
         debug!("access: {:?}, mask={:#o}", path, mask);
-        match self.target.access(req.info(), &path, mask as u32) {
+        match self.target.access(req.info(), &path, mask.bits() as u32) {
             Ok(()) => reply.ok(),
-            Err(e) => reply.error(e),
+            Err(e) => reply.error(Errno::from_i32(e)),
         }
     }
 
     fn create(
-        &mut self,
-        req: &fuser::Request<'_>,
-        parent: u64,
+        &self,
+        req: &fuser::Request,
+        parent: INodeNo,
         name: &OsStr,
         mode: u32,
         _umask: u32, // TODO
@@ -818,9 +810,9 @@ impl<T: FilesystemMT + Sync + Send + 'static> fuser::Filesystem for FuseMT<T> {
             Ok(create) => {
                 let (ino, generation) = self.inodes.add(Arc::new(parent_path.join(name)));
                 let attr = fuse_fileattr(create.attr, ino);
-                reply.created(&create.ttl, &attr, generation, create.fh, create.flags);
+                reply.created(&create.ttl, &attr, generation, FileHandle(create.fh), FopenFlags::from_bits_retain(create.flags));
             },
-            Err(e) => reply.error(e),
+            Err(e) => reply.error(Errno::from_i32(e)),
         }
     }
 
@@ -832,15 +824,15 @@ impl<T: FilesystemMT + Sync + Send + 'static> fuser::Filesystem for FuseMT<T> {
 
     #[cfg(target_os = "macos")]
     fn setvolname(
-        &mut self,
-        req: &fuser::Request<'_>,
+        &self,
+        req: &fuser::Request,
         name: &OsStr,
         reply: fuser::ReplyEmpty,
     ) {
         debug!("setvolname: {:?}", name);
         match self.target.setvolname(req.info(), name) {
             Ok(()) => reply.ok(),
-            Err(e) => reply.error(e),
+            Err(e) => reply.error(Errno::from_i32(e)),
         }
     }
 
@@ -848,9 +840,9 @@ impl<T: FilesystemMT + Sync + Send + 'static> fuser::Filesystem for FuseMT<T> {
 
     #[cfg(target_os = "macos")]
     fn getxtimes(
-        &mut self,
-        req: &fuser::Request<'_>,
-        ino: u64,
+        &self,
+        req: &fuser::Request,
+        ino: INodeNo,
         reply: fuser::ReplyXTimes,
     ) {
         let path = get_path!(self, ino, reply);
@@ -859,7 +851,7 @@ impl<T: FilesystemMT + Sync + Send + 'static> fuser::Filesystem for FuseMT<T> {
             Ok(xtimes) => {
                 reply.xtimes(xtimes.bkuptime, xtimes.crtime);
             }
-            Err(e) => reply.error(e),
+            Err(e) => reply.error(Errno::from_i32(e)),
         }
     }
 }
