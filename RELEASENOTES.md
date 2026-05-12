@@ -1,3 +1,7 @@
+v0.6.4: (unreleased)
+  * Fixed a bug in inode table where renamed directories did not propagate to their children in the
+    table. See #51.
+
 v0.6.3: 2025-11-30
   * Fixed a missing inodes.unlink in rmdir, which could cause a panic in rare circumstances
 
