@@ -7,10 +7,11 @@
 use std::ffi::OsStr;
 use std::io;
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, Mutex, OnceLock};
+use std::sync::{Arc, OnceLock};
 use std::time::SystemTime;
 
 use fuser::{AccessFlags, BsdFileFlags, Errno, FileHandle, FopenFlags, INodeNo, LockOwner, OpenFlags, RenameFlags, TimeOrNow, WriteFlags};
+use parking_lot::Mutex;
 use threadpool::ThreadPool;
 
 use crate::directory_cache::*;
@@ -100,7 +101,7 @@ impl<T: FilesystemMT + Sync + Send + 'static> FuseMT<T> {
 
 macro_rules! get_path {
     ($s:expr, $ino:expr, $reply:expr) => {
-        if let Some(path) = $s.inodes.lock().unwrap().get_path($ino) {
+        if let Some(path) = $s.inodes.lock().get_path($ino) {
             path
         } else {
             $reply.error(Errno::EINVAL);
@@ -136,7 +137,7 @@ impl<T: FilesystemMT + Sync + Send + 'static> fuser::Filesystem for FuseMT<T> {
         let path = Arc::new((*parent_path).clone().join(name));
         match self.target.getattr(req.info(), &path, None) {
             Ok((ttl, attr)) => {
-                let mut inodes = self.inodes.lock().unwrap();
+                let mut inodes = self.inodes.lock();
                 let (ino, generation) = inodes.add_or_get(path.clone());
                 inodes.lookup(ino);
                 reply.entry(&ttl, &fuse_fileattr(attr, ino), generation);
@@ -151,7 +152,7 @@ impl<T: FilesystemMT + Sync + Send + 'static> fuser::Filesystem for FuseMT<T> {
         ino: INodeNo,
         nlookup: u64,
     ) {
-        let mut inodes = self.inodes.lock().unwrap();
+        let mut inodes = self.inodes.lock();
         let path = inodes.get_path(ino).unwrap_or_else(|| {
             Arc::new(PathBuf::from("[unknown]"))
         });
@@ -281,7 +282,7 @@ impl<T: FilesystemMT + Sync + Send + 'static> fuser::Filesystem for FuseMT<T> {
         debug!("mknod: {:?}/{:?}", parent_path, name);
         match self.target.mknod(req.info(), &parent_path, name, mode, rdev) {
             Ok((ttl, attr)) => {
-                let (ino, generation) = self.inodes.lock().unwrap()
+                let (ino, generation) = self.inodes.lock()
                     .add(Arc::new(parent_path.join(name)));
                 reply.entry(&ttl, &fuse_fileattr(attr, ino), generation)
             },
@@ -302,7 +303,7 @@ impl<T: FilesystemMT + Sync + Send + 'static> fuser::Filesystem for FuseMT<T> {
         debug!("mkdir: {:?}/{:?}", parent_path, name);
         match self.target.mkdir(req.info(), &parent_path, name, mode) {
             Ok((ttl, attr)) => {
-                let (ino, generation) = self.inodes.lock().unwrap()
+                let (ino, generation) = self.inodes.lock()
                     .add(Arc::new(parent_path.join(name)));
                 reply.entry(&ttl, &fuse_fileattr(attr, ino), generation)
             },
@@ -321,7 +322,7 @@ impl<T: FilesystemMT + Sync + Send + 'static> fuser::Filesystem for FuseMT<T> {
         debug!("unlink: {:?}/{:?}", parent_path, name);
         match self.target.unlink(req.info(), &parent_path, name) {
             Ok(()) => {
-                self.inodes.lock().unwrap().unlink(&parent_path.join(name));
+                self.inodes.lock().unlink(&parent_path.join(name));
                 reply.ok()
             },
             Err(e) => reply.error(Errno::from_i32(e)),
@@ -339,7 +340,7 @@ impl<T: FilesystemMT + Sync + Send + 'static> fuser::Filesystem for FuseMT<T> {
         debug!("rmdir: {:?}/{:?}", parent_path, name);
         match self.target.rmdir(req.info(), &parent_path, name) {
             Ok(()) => {
-                self.inodes.lock().unwrap().unlink(&parent_path.join(name));
+                self.inodes.lock().unlink(&parent_path.join(name));
                 reply.ok()
             },
             Err(e) => reply.error(Errno::from_i32(e)),
@@ -358,7 +359,7 @@ impl<T: FilesystemMT + Sync + Send + 'static> fuser::Filesystem for FuseMT<T> {
         debug!("symlink: {:?}/{:?} -> {:?}", parent_path, name, link);
         match self.target.symlink(req.info(), &parent_path, name, link) {
             Ok((ttl, attr)) => {
-                let (ino, generation) = self.inodes.lock().unwrap()
+                let (ino, generation) = self.inodes.lock()
                     .add(Arc::new(parent_path.join(name)));
                 reply.entry(&ttl, &fuse_fileattr(attr, ino), generation)
             },
@@ -381,7 +382,7 @@ impl<T: FilesystemMT + Sync + Send + 'static> fuser::Filesystem for FuseMT<T> {
         debug!("rename: {:?}/{:?} -> {:?}/{:?}", parent_path, name, newparent_path, newname);
         match self.target.rename(req.info(), &parent_path, name, &newparent_path, newname) {
             Ok(()) => {
-                self.inodes.lock().unwrap().rename(&parent_path.join(name), Arc::new(newparent_path.join(newname)));
+                self.inodes.lock().rename(&parent_path.join(name), Arc::new(newparent_path.join(newname)));
                 reply.ok()
             },
             Err(e) => reply.error(Errno::from_i32(e)),
@@ -403,7 +404,7 @@ impl<T: FilesystemMT + Sync + Send + 'static> fuser::Filesystem for FuseMT<T> {
             Ok((ttl, attr)) => {
                 // NOTE: this results in the new link having a different inode from the original.
                 // This is needed because our inode table is a 1:1 map between paths and inodes.
-                let (new_ino, generation) = self.inodes.lock().unwrap()
+                let (new_ino, generation) = self.inodes.lock()
                     .add(Arc::new(newparent_path.join(newname)));
                 reply.entry(&ttl, &fuse_fileattr(attr, new_ino), generation);
             },
@@ -559,7 +560,7 @@ impl<T: FilesystemMT + Sync + Send + 'static> fuser::Filesystem for FuseMT<T> {
         debug!("opendir: {:?}", path);
         match self.target.opendir(req.info(), &path, flags.0 as u32) {
             Ok((fh, flags)) => {
-                let dcache_key = self.directory_cache.lock().unwrap().new_entry(fh);
+                let dcache_key = self.directory_cache.lock().new_entry(fh);
                 reply.opened(FileHandle(dcache_key), FopenFlags::from_bits_retain(flags));
             },
             Err(e) => reply.error(Errno::from_i32(e)),
@@ -577,7 +578,7 @@ impl<T: FilesystemMT + Sync + Send + 'static> fuser::Filesystem for FuseMT<T> {
         let path = get_path!(self, ino, reply);
         debug!("readdir: {:?} @ {}", path, offset);
 
-        let mut dcache = self.directory_cache.lock().unwrap();
+        let mut dcache = self.directory_cache.lock();
         let entries: &[DirectoryEntry] = {
             let dcache_entry = dcache.get_mut(fh.0);
             if let Some(ref entries) = dcache_entry.entries {
@@ -601,7 +602,7 @@ impl<T: FilesystemMT + Sync + Send + 'static> fuser::Filesystem for FuseMT<T> {
             ino
         } else {
             let parent_path: &Path = path.parent().unwrap();
-            match self.inodes.lock().unwrap().get_inode(parent_path) {
+            match self.inodes.lock().get_inode(parent_path) {
                 Some(inode) => inode,
                 None => {
                     error!("readdir: unable to get inode for parent of {:?}", path);
@@ -652,7 +653,7 @@ impl<T: FilesystemMT + Sync + Send + 'static> fuser::Filesystem for FuseMT<T> {
     ) {
         let path = get_path!(self, ino, reply);
         debug!("releasedir: {:?}", path);
-        let mut dcache = self.directory_cache.lock().unwrap();
+        let mut dcache = self.directory_cache.lock();
         let real_fh = dcache.real_fh(fh.0);
         match self.target.releasedir(req.info(), &path, real_fh, flags.0 as u32) {
             Ok(()) => reply.ok(),
@@ -671,7 +672,7 @@ impl<T: FilesystemMT + Sync + Send + 'static> fuser::Filesystem for FuseMT<T> {
     ) {
         let path = get_path!(self, ino, reply);
         debug!("fsyncdir: {:?} (datasync: {:?})", path, datasync);
-        let real_fh = self.directory_cache.lock().unwrap().real_fh(fh.0);
+        let real_fh = self.directory_cache.lock().real_fh(fh.0);
         match self.target.fsyncdir(req.info(), &path, real_fh, datasync) {
             Ok(()) => reply.ok(),
             Err(e) => reply.error(Errno::from_i32(e)),
@@ -816,7 +817,7 @@ impl<T: FilesystemMT + Sync + Send + 'static> fuser::Filesystem for FuseMT<T> {
         debug!("create: {:?}/{:?} (mode={:#o}, flags={:#x})", parent_path, name, mode, flags);
         match self.target.create(req.info(), &parent_path, name, mode, flags as u32) {
             Ok(create) => {
-                let (ino, generation) = self.inodes.lock().unwrap().add(Arc::new(parent_path.join(name)));
+                let (ino, generation) = self.inodes.lock().add(Arc::new(parent_path.join(name)));
                 let attr = fuse_fileattr(create.attr, ino);
                 reply.created(&create.ttl, &attr, generation, FileHandle(create.fh), FopenFlags::from_bits_retain(create.flags));
             },

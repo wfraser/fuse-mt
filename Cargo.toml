@@ -14,6 +14,7 @@ edition = "2018"
 fuser = "0.17"
 libc = "0.2"
 log = "0.4"
+parking_lot = "0.12"
 threadpool = "1.8"
 
 [workspace]
