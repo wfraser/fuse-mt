@@ -154,23 +154,16 @@ impl InodeTable {
             return 1;
         }
 
-        let mut delete = false;
-        let lookups: LookupCount;
         let idx = inode.0 as usize - 1;
 
-        {
-            let entry = &mut self.table[idx];
-            debug!("forget entry {:?}", entry);
-            assert!(n <= entry.lookups);
-            entry.lookups -= n;
-            lookups = entry.lookups;
-            if lookups == 0 {
-                delete = true;
-                self.by_path.remove(entry.path.as_ref().unwrap());
-            }
-        }
+        let entry = &mut self.table[idx];
+        debug!("forget entry {:?}", entry);
 
-        if delete {
+        entry.lookups = entry.lookups.saturating_sub(n);
+        let lookups = entry.lookups; // unborrow
+
+        if lookups == 0 {
+            self.by_path.remove(entry.path.as_ref().unwrap());
             self.table[idx].path = None;
             self.free_list.push_back(idx);
         }
