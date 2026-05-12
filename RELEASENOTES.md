@@ -1,3 +1,6 @@
+v0.6.5: unreleased
+  * Updated `fuser` dependency to v0.17.
+
 v0.6.4: 2026-05-17
   * Fixed a bug in inode table where renamed directories did not propagate to their children in the
     table. See #51.
