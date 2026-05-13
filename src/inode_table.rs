@@ -251,15 +251,18 @@ impl InodeTable {
     }
 }
 
-/// Facilitates comparing Rc<PathBuf> and &Path
+/// Facilitates comparing Arc<PathBuf> and &Path.
+///
+/// We can't implement arbitrary traits like Borrow<Path> on Arc<PathBuf>, but we can invent our
+/// own type like this that's identical to Path, and use that instead.
 #[derive(Debug)]
-struct Pathish {
-    inner: Path,
-}
+#[repr(transparent)]
+struct Pathish(Path);
 
 impl Pathish {
     pub fn new(p: &Path) -> &Pathish {
-        unsafe { &*(p as *const _ as *const Pathish) }
+        // safe because Path and Pathish are identical, guarenteed by #[repr(transparent)]
+        unsafe { std::mem::transmute(p) }
     }
 }
 
@@ -277,16 +280,15 @@ impl PartialOrd<Self> for Pathish {
 
 impl Ord for Pathish {
     fn cmp(&self, other: &Self) -> Ordering {
-        self.inner.cmp(&other.inner)
+        self.0.cmp(&other.0)
     }
 }
 
-impl Eq for Pathish {
-}
+impl Eq for Pathish {}
 
 impl PartialEq for Pathish {
     fn eq(&self, other: &Pathish) -> bool {
-        self.inner.eq(&other.inner)
+        self.0.eq(&other.0)
     }
 }
 
